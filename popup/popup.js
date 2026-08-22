@@ -236,6 +236,17 @@ chrome.runtime.onMessage.addListener((msg)=>{
   }
   if(msg.type==="AUTH_CHANGED") refreshAuth();
 });
+chrome.storage.onChanged.addListener((changes, area)=>{
+  if(area!=="local" || !changes.syncState) return;
+  const ns=changes.syncState.newValue;
+  renderSyncState(ns);
+  if(ns && !ns.running && typeof syncPoll!=="undefined" && syncPoll){
+    clearInterval(syncPoll); syncPoll=null;
+    document.getElementById("btn-start") && (document.getElementById("btn-start").disabled=false);
+    document.getElementById("btn-full") && (document.getElementById("btn-full").disabled=false);
+    refreshAuth();
+  }
+});
 // 启动时检查是否有待处理的不一致
 chrome.runtime.sendMessage({type:"GET_MISMATCH"}).then(r=>{ if(r && r.details) showMismatch(r.details); }).catch(()=>{});
 

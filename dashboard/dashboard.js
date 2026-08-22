@@ -501,6 +501,8 @@ chrome.runtime.onMessage.addListener((msg)=>{
   if(msg.type==="SYNC_STATE"){
     renderSyncBanner(msg.state);
     $("#top-loading").hidden= !(msg.state && msg.state.running);
+    const syncInd=document.getElementById("sync-indicator");
+    if(syncInd) syncInd.classList.toggle("hidden", !(msg.state && msg.state.running));
     // 如果进入 mismatch 阶段，尝试拉一次详情
     if(msg.state && msg.state.phase==="mismatch"){
       chrome.runtime.sendMessage({type:"GET_MISMATCH"}).then(r=>{
@@ -509,6 +511,30 @@ chrome.runtime.onMessage.addListener((msg)=>{
     }
   }
   if(msg.type==="AUTH_CHANGED") refreshHeader();
+});
+// 兜底：通过 storage 监听同步状态变化，确保后台 setSyncState 后即使消息丢失也能自动隐藏“同步中”
+chrome.storage.onChanged.addListener((changes, area)=>{
+  if(area!=="local" || !changes.syncState) return;
+  const ns=changes.syncState.newValue;
+  renderSyncBanner(ns);
+  const topLoading=document.getElementById("top-loading");
+  if(topLoading) topLoading.hidden= !(ns && ns.running);
+  const ind=document.getElementById("sync-indicator");
+  if(ind) ind.classList.toggle("hidden", !(ns && ns.running));
+  if(ns && !ns.running && typeof syncPoll!=="undefined" && syncPoll){
+    clearInterval(syncPoll); syncPoll=null;
+    refreshHeader();
+    const activeSide=document.querySelector(".side-item.active");
+    const page=activeSide? activeSide.dataset.page : "home";
+    if(page==="home") renderHome();
+    if(page==="stats") renderStats();
+    if(page==="records") renderRecords();
+    if(ns.phase==="done") toast(ns.message || "同步完成");
+    else if(ns.phase==="error") toast(ns.message || "同步失败", false);
+    else if(ns.phase==="mismatch"){
+      chrome.runtime.sendMessage({type:"GET_MISMATCH"}).then(r=>{ if(r && r.details) showMismatchModal(r.details); }).catch(()=>{});
+    }
+  }
 });
 
 // init settings pills
