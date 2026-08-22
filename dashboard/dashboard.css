@@ -103,3 +103,38 @@ a{color:var(--primary)}
 .slider:before{content:"";position:absolute;height:18px;width:18px;left:3px;bottom:3px;background:#fff;border-radius:50%;transition:.2s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
 input:checked+.slider{background:var(--primary)}
 input:checked+.slider:before{transform:translateX(20px)}
+
+/* === 暗色文字可读性修复 === */
+[data-theme="dark"] .pill{color:var(--text);background:var(--card);border-color:var(--line)}
+[data-theme="dark"] .pill.active{color:var(--bg);background:var(--accent);border-color:var(--accent)}
+[data-theme="dark"] .btn{color:var(--text);background:var(--card);border-color:var(--line)}
+[data-theme="dark"] .btn.ghost{color:var(--text);background:transparent;border-color:var(--line)}
+[data-theme="dark"] .btn.primary{color:var(--bg);background:var(--accent);border-color:var(--accent)}
+[data-theme="dark"] .chip{color:var(--text);background:var(--card);border-color:var(--line)}
+[data-theme="dark"] .select{color:var(--text);background:var(--card);border-color:var(--line)}
+[data-theme="dark"] .pager button{color:var(--text);background:var(--card);border-color:var(--line)}
+[data-theme="dark"] .sl{color:var(--text)}
+[data-theme="dark"] .sd{color:var(--muted)}
+[data-theme="dark"] .thanks{color:var(--muted)}
+[data-theme="dark"] .hint{color:var(--muted)}
+[data-theme="dark"] .qw-label{color:var(--text)}
+[data-theme="dark"] .qw-pct{color:var(--text)}
+[data-theme="dark"] .kpi-value{color:var(--text)}
+[data-theme="dark"] .rank-name{color:var(--text)}
+[data-theme="dark"] .table th{color:var(--muted)}
+[data-theme="dark"] .table td{color:var(--text);border-color:var(--line)}
+[data-theme="dark"] .slider{background:#1e2a44}
+[data-theme="dark"] .slider:before{background:#e2e8f0}
+[data-theme="dark"] input:checked+.slider{background:var(--primary)}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .pill{color:#e2e8f0;background:#111c33;border-color:#1e2a44}
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .pill.active{color:#0b1220;background:#e2e8f0;border-color:#e2e8f0}
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .btn{color:#e2e8f0;background:#111c33;border-color:#1e2a44}
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .btn.ghost{color:#e2e8f0;background:transparent;border-color:#1e2a44}
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .btn.primary{color:#0b1220;background:#e2e8f0;border-color:#e2e8f0}
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .chip{color:#e2e8f0;background:#111c33;border-color:#1e2a44}
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .sl{color:#e2e8f0}
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .sd{color:#94a3b8}
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .hint{color:#94a3b8}
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .slider{background:#1e2a44}
+}
