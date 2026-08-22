@@ -99,6 +99,7 @@ async function runSync(mode="incremental"){
   abortFlag=false;
   const settings=await getSettings();
   const windowDays= settings.windowDays ?? 90; // null means all
+  const isTurbo = !!settings.turbo;
   setSyncState({running:true, mode, phase:"quota", message:"正在检查登录状态…", inserted:0, page:0, progress:2});
 
   try{
@@ -126,7 +127,6 @@ async function runSync(mode="incremental"){
     let keyNames={};
     try{ keyNames=await fetchKeyNames(workspaceId); if(Object.keys(keyNames).length) await chrome.storage.local.set({keyNames}); }catch{}
 
-    const isTurbo = !!settings.turbo;
     const MAX_FULL_PAGES=2000;
     const INCREMENTAL_PAGES=isTurbo ? 10 : 5;
     const FETCH_BATCH=isTurbo ? 10 : 5;

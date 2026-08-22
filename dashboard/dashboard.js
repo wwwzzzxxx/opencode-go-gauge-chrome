@@ -396,6 +396,10 @@ async function startSync(mode){
   }catch(e){ toast(String(e.message||e), false); }
 }
 $("#btn-sync").addEventListener("click", ()=> startSync("incremental"));
+$("#btn-sync-full")?.addEventListener("click", async()=>{
+  if(!confirm("全量同步最多拉取 2000 页（约10万条），耗时较长，确定继续？")) return;
+  startSync("full");
+});
 $("#btn-start-incr").addEventListener("click", ()=> startSync("incremental"));
 $("#btn-start-full").addEventListener("click", async()=>{
   if(!confirm("全量同步最多拉取 2000 页，耗时较长，确定继续？")) return;
