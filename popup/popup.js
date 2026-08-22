@@ -210,9 +210,13 @@ function showMismatch(details){
   const text=document.getElementById("mismatch-text");
   if(!banner || !text) return;
   const d=details || {};
-  const info=d.info || {};
-  const minute=d.minute || "未知分钟";
-  text.textContent=`${minute} 本地${info.localCount||"-"}条 vs 远端${info.fetchedCount||"-"}条`;
+  if(d.count && d.list){
+    text.textContent=`${d.count}个分钟不一致：` + d.list.slice(0,3).map(m=> `${m.minute}(${m.info.localCount}→${m.info.fetchedCount})`).join("，") + (d.count>3?` 等共${d.count}个`:"");
+  } else {
+    const info=d.info || {};
+    const minute=d.minute || "未知分钟";
+    text.textContent=`${minute} 本地${info.localCount||"-"}条 vs 远端${info.fetchedCount||"-"}条`;
+  }
   banner.hidden=false;
 }
 function hideMismatch(){ const b=document.getElementById("mismatch-banner"); if(b) b.hidden=true; }

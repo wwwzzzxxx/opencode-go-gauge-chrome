@@ -247,6 +247,7 @@ async function runSync(mode="incremental"){
     let windowBoundaryReached=false;
     let consecutiveEmptyBatches=0;
     let foundOverlap=false;
+    globalThis._allMismatches=[];
     // 预加载本地 usg_id 集合用于快速判重（首次增量时）
     let localUsgSet=new Set();
     let minuteCache=new Map(); // minute -> {count, tokenSum, costRaw}
@@ -353,53 +354,12 @@ async function runSync(mode="incremental"){
         if(mode==="incremental"){
           // 增量只插入本地没有的
           toInsert = dbRecs.filter(r=> !localUsgSet.has(r.usg_id));
-          // 如果本批有重叠且无不一致，说明已追到历史，可以只插入新记录后准备结束
-          // 如果有不一致，则等待用户决策
+          // 若本批有不一致，先收集，不立即弹窗，待整轮扫描结束再统一提示
           if(batchMismatchMinute){
-            // 暂停并询问用户
-            mismatchPendingDetails={minute: batchMismatchMinute, info: batchMismatchInfo, page: p, workspaceId};
-            setSyncState({phase:"mismatch", message:`检测到 ${batchMismatchMinute} 本地与远端不一致，等待用户选择…`, progress: progBase});
-            // 通知前端
-            try{ chrome.runtime.sendMessage({type:"SYNC_MISMATCH", details: mismatchPendingDetails}); }catch{}
-            // 也用 notification 兜底
-            try{ chrome.notifications?.create({type:"basic", iconUrl:"icons/icon128.png", title:"GoGauge 检测到缓存不一致", message:`${batchMismatchMinute} 本地${batchMismatchInfo.localCount}条 vs 远端${batchMismatchInfo.fetchedCount}条，是否重建？`}); }catch{}
-            const choice = await new Promise(resolve=>{
-              mismatchResolver=resolve;
-              // 超时 5 分钟默认按拼接处理
-              setTimeout(()=>{ if(mismatchResolver){ mismatchResolver("splice"); mismatchResolver=null; } }, 300000);
-            });
-            mismatchPendingDetails=null;
-            if(choice==="rebuild"){
-              console.log("[GoGauge] 用户选择重建，全量清空");
-              await clearAllRecords();
-              localUsgSet.clear();
-              minuteCache.clear();
-              // 全量插入本批所有
-              toInsert = dbRecs;
-              // 后续按全量继续，不再检测
-              // 为避免再次触发，清空 local set 后后续批次不会再判重叠
-            }else if(choice==="splice"){
-              console.log("[GoGauge] 用户选择拼接，删除该分钟起本地记录");
-              try{ await deleteRecordsFromMinute(batchMismatchMinute); }catch(e){ console.warn(e); }
-              // 从缓存中移除该分钟及之后的本地记录
-              for(const key of [...minuteCache.keys()]){
-                if(key >= batchMismatchMinute) minuteCache.delete(key);
-              }
-              for(const id of [...localUsgSet]){
-                // 粗略：无法精确知道哪些 id 属于该分钟，重新加载更安全
-              }
-              // 重新加载本地集合（简化：清空后后续不再判重叠，直接插入）
-              // 为了简单，拼接后清空 localUsgSet，后续直接插入
-              // 实际应重新构建，但为性能先清空
-              // 插入本批全部
-              toInsert = dbRecs;
-              // 清空后后续不再检测
-              localUsgSet.clear();
-              minuteCache.clear();
-            }else{
-              // ignore: 仅插入新记录
-              // toInsert 已是新记录
-            }
+            if(!globalThis._allMismatches) globalThis._allMismatches=[];
+            globalThis._allMismatches.push({minute: batchMismatchMinute, info: batchMismatchInfo, page: p});
+            console.warn(`[GoGauge] 收集不一致 ${batchMismatchMinute} 待统一处理`);
+            // 仍按 ignore 先插入新记录，后续统一让用户选
           }
         }
         try{
@@ -451,6 +411,40 @@ async function runSync(mode="incremental"){
         break;
       }
       if(SLEEP_MS>0) await new Promise(r=>setTimeout(r, SLEEP_MS));
+    }
+
+    // 增量：若收集到不一致，统一弹窗一次
+    if(mode==="incremental" && globalThis._allMismatches && globalThis._allMismatches.length){
+      const all = globalThis._allMismatches;
+      globalThis._allMismatches=null;
+      const summary = all.slice(0,5).map(m=> `${m.minute} 本地${m.info.localCount}条/Token${m.info.localTokenSum} vs 远端${m.info.fetchedCount}条/Token${m.info.fetchedTokenSum}`).join("\n");
+      const more = all.length>5 ? `\n…等共 ${all.length} 个分钟` : "";
+      mismatchPendingDetails={count: all.length, list: all, summary: summary+more, minutes: all.map(m=>m.minute)};
+      setSyncState({phase:"mismatch", message:`检测到 ${all.length} 个分钟不一致，等待用户选择…`, progress: 85});
+      try{ chrome.runtime.sendMessage({type:"SYNC_MISMATCH", details: mismatchPendingDetails}); }catch{}
+      try{ chrome.notifications?.create({type:"basic", iconUrl:"icons/icon128.png", title:"GoGauge 检测到缓存不一致", message:`共 ${all.length} 个分钟不一致，是否重建？`}); }catch{}
+      const choice = await new Promise(resolve=>{
+        mismatchResolver=resolve;
+        setTimeout(()=>{ if(mismatchResolver){ mismatchResolver("ignore"); mismatchResolver=null; } }, 300000);
+      });
+      mismatchPendingDetails=null;
+      if(choice==="rebuild"){
+        console.log("[GoGauge] 用户选择重建，全量清空");
+        await clearAllRecords();
+        // 清空后需重新拉取？提示用户手动点全部同步
+        setSyncState({phase:"error", running:false, message:"已清空本地，请重新点击 全部同步 进行全量重建"});
+        return {ok:false, error:"已清空，需重建", needRebuild:true};
+      }else if(choice==="splice"){
+        console.log("[GoGauge] 用户选择拼接，删除相关分钟起记录");
+        for(const m of all){
+          try{ await deleteRecordsFromMinute(m.minute); }catch(e){ console.warn(e); }
+        }
+        // 为简化，拼接后不再自动补拉，提示用户可再次增量
+        setSyncState({phase:"done", running:false, message:`已删除 ${all.length} 个分钟的本地记录，已与远端拼接，请再次增量或全量`});
+        // 已插入的新记录已在前面按 ignore 逻辑入库，无需额外
+      }else{
+        console.log("[GoGauge] 用户选择忽略");
+      }
     }
 
     if(windowDays && mode==="full"){

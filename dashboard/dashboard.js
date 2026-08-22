@@ -460,13 +460,19 @@ function showMismatchModal(details){
   const text=document.getElementById("mismatch-text");
   if(!modal || !text) return;
   const d=details || {};
-  const info=d.info || {};
-  const minute=d.minute || d.details?.minute || "未知分钟";
-  const localCount=info.localCount ?? "-";
-  const fetchedCount=info.fetchedCount ?? "-";
-  const localSum=info.localTokenSum ?? info.localSum ?? "-";
-  const fetchedSum=info.fetchedTokenSum ?? info.fetchedSum ?? "-";
-  text.innerHTML=`在 <b>${minute}</b> 检测到不一致：<br>本地 ${localCount} 条 / Token ${localSum} <br>远端 ${fetchedCount} 条 / Token ${fetchedSum}`;
+  // 兼容单条与多条（count/list）
+  if(d.count && d.list){
+    const summary = d.summary || d.list.slice(0,5).map(m=> `${m.minute} 本地${m.info.localCount}条 vs 远端${m.info.fetchedCount}条`).join("<br>");
+    text.innerHTML=`检测到 <b>${d.count} 个分钟</b>不一致：<br>${summary}${d.count>5?"<br>…":""}`;
+  } else {
+    const info=d.info || {};
+    const minute=d.minute || d.details?.minute || "未知分钟";
+    const localCount=info.localCount ?? "-";
+    const fetchedCount=info.fetchedCount ?? "-";
+    const localSum=info.localTokenSum ?? info.localSum ?? "-";
+    const fetchedSum=info.fetchedTokenSum ?? info.fetchedSum ?? "-";
+    text.innerHTML=`在 <b>${minute}</b> 检测到不一致：<br>本地 ${localCount} 条 / Token ${localSum} <br>远端 ${fetchedCount} 条 / Token ${fetchedSum}`;
+  }
   modal.hidden=false;
   // 聚焦
   modal.scrollIntoView({behavior:"smooth", block:"center"});
