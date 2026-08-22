@@ -2,7 +2,7 @@ import { computeTotals, computeModelStats, computeDailyStats, computeTodayTrend,
 
 const $=(s)=>document.querySelector(s);
 const $$=(s)=>document.querySelectorAll(s);
-let currentHomePeriod="today";
+let currentHomePeriod="30d";
 let currentStatsPeriod="30d";
 let currentRecPage=1, currentRecModel="", currentRecPeriod="30d";
 let charts={};

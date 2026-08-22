@@ -19,7 +19,7 @@ import { computeTotals } from "../src/lib/db.js";
 })();
 
 const $ = (s)=> document.querySelector(s);
-let currentPeriod="today";
+let currentPeriod="30d";
 let syncPoll=null;
 
 function fmtTokens(n){
