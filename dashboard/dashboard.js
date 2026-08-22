@@ -29,6 +29,7 @@ function toast(msg, ok=true){
   const el=document.createElement("div");
   el.className="toast";
   el.style.background= ok? "#0b1220" : "#b91c1c";
+  el.style.color="#fff";
   el.textContent=msg;
   wrap.appendChild(el);
   setTimeout(()=> el.remove(), 2600);
