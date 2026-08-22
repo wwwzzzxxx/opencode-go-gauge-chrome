@@ -419,6 +419,14 @@ $("#set-window-pills").addEventListener("click", async(e)=>{
   await chrome.runtime.sendMessage({type:"SAVE_SETTINGS", payload:{windowDays: v||null}});
   toast(`同步范围已设为 ${v? v+" 天" : "全部"}`);
 });
+const turboChk=document.getElementById("set-turbo");
+if(turboChk){
+  turboChk.addEventListener("change", async(e)=>{
+    const on=e.target.checked;
+    await chrome.runtime.sendMessage({type:"SAVE_SETTINGS", payload:{turbo:on}});
+    toast(on? "已开启极速同步：并发 10 / 无间隔":"已关闭极速同步：恢复保守模式");
+  });
+}
 
 function startPolling(){
   if(syncPoll) clearInterval(syncPoll);
@@ -458,7 +466,8 @@ chrome.runtime.onMessage.addListener((msg)=>{
   const s=await chrome.runtime.sendMessage({type:"GET_SETTINGS"});
   const wd=s.data.windowDays;
   const v= wd==null? 0 : wd;
-  $$("#set-window-pills .pill").forEach(b=> b.classList.toggle("active", parseInt(b.dataset.v,10)===v));
+  $("#set-window-pills .pill").forEach(b=> b.classList.toggle("active", parseInt(b.dataset.v,10)===v));
+  const turboEl=document.getElementById("set-turbo"); if(turboEl) turboEl.checked = !!s.data.turbo;
 })();
 
 refreshHeader();

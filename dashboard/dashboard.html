@@ -193,7 +193,11 @@
             <button class="pill" data-v="0">全部</button>
           </div>
         </div>
-        <div class="set-row">
+                <div class="set-row">
+          <div><div class="sl">极速同步</div><div class="sd">并发 10 / 无间隔，速度快但可能触发限流 429（增量改 10 页）</div></div>
+          <label class="switch"><input type="checkbox" id="set-turbo"><span class="slider"></span></label>
+        </div>
+<div class="set-row">
           <div><div class="sl">手动同步</div><div class="sd">插件不会自动拉取数据，需点击「开始统计」才会请求接口</div></div>
           <div style="display:flex;gap:8px">
             <button class="btn" id="btn-start-incr">增量同步</button>
