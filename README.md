@@ -1,4 +1,4 @@
-﻿# GoGauge for Chrome — OpenCode Go 用量仪表盘
+# GoGauge for Chrome — OpenCode Go 用量仪表盘
 
 > Chrome 扩展版 · 本地优先 · 自动读取 opencode.ai 登录态 · 仅在点击【增量同步】后才拉取 · 支持缓存命中率 / 配额窗口 / Token 构成分析
 
@@ -36,12 +36,16 @@
 
 ## 预览
 
-| 弹窗（Popup） | 仪表盘（Dashboard） |
+| 弹窗（Popup）- 亮色 / 深色 | 仪表盘（Dashboard） |
 |---|---|
-| 顶部登录态 + 配额窗口进度条 + 用量概览（30d 默认）+ 缓存命中率进度条 | 侧边栏：仪表盘 / 模型分析 / 使用记录 / 设置 · 顶部同步 Banner + 总页数进度 |
-| ![popup](icons/icon128.png) | ![dashboard](icons/icon128.png) |
+| ![popup](docs/screenshots/popup.png) | ![dashboard](docs/screenshots/dashboard.png) |
+| 亮色：用量概览 30天卡片（96.6% 命中率示例） | 用量概览 + 今日趋势 24h 柱状图 |
 
-> 可自行截图替换占位图，文件置于 docs/screenshots/ 并在 README 引用即可。
+**深色模式 - 弹窗/配额窗口**
+
+![popup-dark](docs/screenshots/popup-dark.png)
+
+> 截图来自本机实测，已自动跟随系统深浅色；如需更新可替换 `docs/screenshots/` 下图片。
 
 ---
 
@@ -250,4 +254,5 @@ A: 费用 cost_raw/1e8 与原版一致；汇率来自 open.er-api.com，6 小时
 ## License
 
 MIT — 同原项目保持一致。详见 LICENSE。
+
 
