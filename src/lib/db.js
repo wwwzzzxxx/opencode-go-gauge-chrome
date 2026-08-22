@@ -294,3 +294,55 @@ export async function getMeta(key){
 }
 export async function getQuotaCache(){ return getMeta("quota"); }
 export async function setQuotaCache(v){ return setMeta("quota", v); }
+
+// === 增量同步辅助：基于 usg_id 与分钟桶的匹配检测 ===
+export async function getExistingUsgIds(usgIds){
+  if(!usgIds.length) return new Set();
+  const db=await openDB();
+  const existing=new Set();
+  // Use individual gets; for large sets, chunk
+  const chunkSize=100;
+  for(let i=0;i<usgIds.length;i+=chunkSize){
+    const chunk=usgIds.slice(i,i+chunkSize);
+    await Promise.all(chunk.map(id=> new Promise((resolve)=>{
+      const tx=db.transaction(STORE,"readonly");
+      const req=tx.objectStore(STORE).get(id);
+      req.onsuccess=()=>{ if(req.result) existing.add(id); resolve(); };
+      req.onerror=()=> resolve();
+    })));
+  }
+  return existing;
+}
+export async function getRecordsForMinute(minute){
+  // minute: "2025-08-22T10:15" (ISO slice 0,16)
+  const all=await getAllRecords();
+  return all.filter(r=> r.created_at && r.created_at.slice(0,16)===minute);
+}
+export async function deleteRecordsFromMinute(minute){
+  // 删除 created_at >= minute:00 的所有记录（用于拼接）
+  const cutoff = minute + ":00.000Z";
+  // Actually created_at is ISO like "2025-08-22T10:15:23.000Z" or with timezone, we compare string where ISO is sortable
+  // Use Date comparison for safety
+  const cutoffMs = new Date(minute+":00Z").getTime();
+  // If minute already includes Z, handle
+  const all=await getAllRecords();
+  const toDelete=all.filter(r=>{
+    try{ return new Date(r.created_at).getTime() >= cutoffMs; }catch{ return r.created_at >= minute; }
+  });
+  if(!toDelete.length) return 0;
+  const db=await openDB();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(STORE,"readwrite");
+    const st=tx.objectStore(STORE);
+    for(const r of toDelete) st.delete(r.usg_id);
+    tx.oncomplete=()=>resolve(toDelete.length);
+    tx.onerror=()=>reject(tx.error);
+  });
+}
+export async function getMinuteSummary(minute){
+  const recs=await getRecordsForMinute(minute);
+  if(!recs.length) return {count:0, tokenSum:0, costRaw:0, ids:[]};
+  const tokenSum=recs.reduce((s,r)=> s + (r.input_tokens||0)+(r.output_tokens||0)+(r.cache_read_tokens||0),0);
+  const costRaw=recs.reduce((s,r)=> s + (r.cost_raw||0),0);
+  return {count:recs.length, tokenSum, costRaw, ids: recs.map(r=>r.usg_id).sort()};
+}

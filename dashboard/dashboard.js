@@ -454,10 +454,52 @@ function startPolling(){
   }, 800);
 }
 
+function showMismatchModal(details){
+  const modal=document.getElementById("mismatch-modal");
+  const text=document.getElementById("mismatch-text");
+  if(!modal || !text) return;
+  const d=details || {};
+  const info=d.info || {};
+  const minute=d.minute || d.details?.minute || "未知分钟";
+  const localCount=info.localCount ?? "-";
+  const fetchedCount=info.fetchedCount ?? "-";
+  const localSum=info.localTokenSum ?? info.localSum ?? "-";
+  const fetchedSum=info.fetchedTokenSum ?? info.fetchedSum ?? "-";
+  text.innerHTML=`在 <b>${minute}</b> 检测到不一致：<br>本地 ${localCount} 条 / Token ${localSum} <br>远端 ${fetchedCount} 条 / Token ${fetchedSum}`;
+  modal.hidden=false;
+  // 聚焦
+  modal.scrollIntoView({behavior:"smooth", block:"center"});
+}
+function hideMismatchModal(){
+  const m=document.getElementById("mismatch-modal");
+  if(m) m.hidden=true;
+}
+async function resolveMismatch(choice){
+  hideMismatchModal();
+  try{ await chrome.runtime.sendMessage({type:"RESOLVE_MISMATCH", payload:{choice}}); }catch{}
+  toast(choice==="rebuild" ? "已选择：清空后全量重建" : choice==="splice" ? "已选择：从该节点拼接" : "已选择：忽略继续");
+}
+
+document.getElementById("mismatch-rebuild")?.addEventListener("click", ()=> resolveMismatch("rebuild"));
+document.getElementById("mismatch-splice")?.addEventListener("click", ()=> resolveMismatch("splice"));
+document.getElementById("mismatch-ignore")?.addEventListener("click", ()=> resolveMismatch("ignore"));
+document.getElementById("mismatch-modal")?.addEventListener("click", (e)=>{
+  if(e.target.id==="mismatch-modal") hideMismatchModal();
+});
+
 chrome.runtime.onMessage.addListener((msg)=>{
+  if(msg.type==="SYNC_MISMATCH"){
+    showMismatchModal(msg.details || msg);
+  }
   if(msg.type==="SYNC_STATE"){
     renderSyncBanner(msg.state);
     $("#top-loading").hidden= !(msg.state && msg.state.running);
+    // 如果进入 mismatch 阶段，尝试拉一次详情
+    if(msg.state && msg.state.phase==="mismatch"){
+      chrome.runtime.sendMessage({type:"GET_MISMATCH"}).then(r=>{
+        if(r && r.details) showMismatchModal(r.details);
+      }).catch(()=>{});
+    }
   }
   if(msg.type==="AUTH_CHANGED") refreshHeader();
 });
@@ -473,3 +515,7 @@ chrome.runtime.onMessage.addListener((msg)=>{
 
 refreshHeader();
 renderHome();
+// 启动时检查是否有待处理的 mismatch（比如刷新后）
+chrome.runtime.sendMessage({type:"GET_MISMATCH"}).then(r=>{
+  if(r && r.details) showMismatchModal(r.details);
+}).catch(()=>{});

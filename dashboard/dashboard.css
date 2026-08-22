@@ -165,3 +165,10 @@ input:checked+.slider:before{transform:translateX(20px)}
     color:#fff !important;
   }
 }
+
+.modal-overlay{position:fixed;inset:0;background:rgba(15,18,32,.6);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;z-index:100;padding:16px}
+.modal-overlay[hidden]{display:none !important}
+.modal-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;max-width:520px;width:100%;box-shadow:0 12px 32px rgba(0,0,0,.25)}
+.modal-card h3{margin:0 0 10px;font-size:16px;font-weight:800;color:var(--text)}
+.modal-card p{margin:0 0 10px;line-height:1.6;color:var(--text)}
+.modal-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-top:12px}

@@ -78,6 +78,15 @@
 
   <div id="last-sync" class="foot hint">—</div>
   <div id="tip" class="tip">首次使用请先登录 <b>opencode.ai</b>，随后点击「开始统计」。数据仅存储在本地，不会自动拉取。</div>
+  <div id="mismatch-banner" class="card" hidden style="border-color:var(--tip-border);background:var(--tip-bg);color:var(--tip-text)">
+    <div style="font-weight:800;font-size:12px;margin-bottom:6px">检测到本地与远端不一致</div>
+    <div id="mismatch-text" class="hint" style="margin-bottom:8px"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <button id="mismatch-rebuild" class="pill small" style="background:#0b1220;color:#fff">重新全量</button>
+      <button id="mismatch-splice" class="pill small">拼接</button>
+      <button id="mismatch-ignore" class="pill small ghost">忽略</button>
+    </div>
+  </div>
 
   <script type="module" src="popup.js"></script>
 </body>

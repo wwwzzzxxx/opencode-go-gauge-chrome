@@ -17,7 +17,13 @@
       "32": "icons/icon32.png"
     }
   },
-  "permissions": ["storage", "cookies", "tabs", "alarms"],
+  "permissions": [
+    "storage",
+    "cookies",
+    "tabs",
+    "alarms",
+    "notifications"
+  ],
   "host_permissions": [
     "https://opencode.ai/*",
     "https://open.er-api.com/*"
@@ -28,15 +34,24 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://opencode.ai/*"],
-      "js": ["src/content.js"],
+      "matches": [
+        "https://opencode.ai/*"
+      ],
+      "js": [
+        "src/content.js"
+      ],
       "run_at": "document_idle"
     }
   ],
   "web_accessible_resources": [
     {
-      "resources": ["dashboard/*", "icons/*"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "dashboard/*",
+        "icons/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "incognito": "spanning"

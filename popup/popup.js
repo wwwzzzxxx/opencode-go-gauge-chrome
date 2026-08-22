@@ -204,9 +204,34 @@ function startPolling(){
   }, 700);
 }
 
+function showMismatch(details){
+  const banner=document.getElementById("mismatch-banner");
+  const text=document.getElementById("mismatch-text");
+  if(!banner || !text) return;
+  const d=details || {};
+  const info=d.info || {};
+  const minute=d.minute || "未知分钟";
+  text.textContent=`${minute} 本地${info.localCount||"-"}条 vs 远端${info.fetchedCount||"-"}条`;
+  banner.hidden=false;
+}
+function hideMismatch(){ const b=document.getElementById("mismatch-banner"); if(b) b.hidden=true; }
+async function resolveMismatch(choice){ hideMismatch(); try{ await chrome.runtime.sendMessage({type:"RESOLVE_MISMATCH", payload:{choice}});}catch{} }
+
+document.getElementById("mismatch-rebuild")?.addEventListener("click", ()=> resolveMismatch("rebuild"));
+document.getElementById("mismatch-splice")?.addEventListener("click", ()=> resolveMismatch("splice"));
+document.getElementById("mismatch-ignore")?.addEventListener("click", ()=> resolveMismatch("ignore"));
+
 chrome.runtime.onMessage.addListener((msg)=>{
-  if(msg.type==="SYNC_STATE") renderSyncState(msg.state);
+  if(msg.type==="SYNC_MISMATCH"){ showMismatch(msg.details || msg); }
+  if(msg.type==="SYNC_STATE"){
+    renderSyncState(msg.state);
+    if(msg.state && msg.state.phase==="mismatch"){
+      chrome.runtime.sendMessage({type:"GET_MISMATCH"}).then(r=>{ if(r && r.details) showMismatch(r.details); }).catch(()=>{});
+    }
+  }
   if(msg.type==="AUTH_CHANGED") refreshAuth();
 });
+// 启动时检查是否有待处理的不一致
+chrome.runtime.sendMessage({type:"GET_MISMATCH"}).then(r=>{ if(r && r.details) showMismatch(r.details); }).catch(()=>{});
 
 refreshAuth();

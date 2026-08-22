@@ -214,6 +214,23 @@
     </section>
 
     <div id="toast-wrap" class="toast-wrap"></div>
+    <div id="mismatch-modal" class="modal-overlay" hidden>
+      <div class="modal-card">
+        <h3>检测到本地与远端不一致</h3>
+        <p id="mismatch-text"></p>
+        <p class="hint">该分钟内本地与服务器的调用次数/消耗不一致，说明缓存可能已失效。请选择：</p>
+        <ul class="hint" style="margin:8px 0 12px 18px;list-style:disc">
+          <li><b>重新全量</b>：清空本地后全量重拉（最稳）</li>
+          <li><b>拼接</b>：删除该分钟起的本地记录，从该节点与远端拼接</li>
+          <li><b>忽略</b>：仅插入新增，保留分歧</li>
+        </ul>
+        <div class="modal-actions">
+          <button id="mismatch-rebuild" class="btn primary">重新全量同步</button>
+          <button id="mismatch-splice" class="btn">从该节点拼接</button>
+          <button id="mismatch-ignore" class="btn ghost">忽略继续</button>
+        </div>
+      </div>
+    </div>
   </main>
 </div>
 

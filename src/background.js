@@ -2,7 +2,7 @@
 // NOTE: Must NOT use dynamic import() in ServiceWorker scope (banned per HTML spec).
 // All imports are static at top level.
 import { fetchQuota, fetchUsagePage, fetchKeyNames, resolveWorkspaceId, AuthError } from "./lib/api.js";
-import { bulkPutRecords, pruneOldRecords, clearAllRecords } from "./lib/db.js";
+import { bulkPutRecords, pruneOldRecords, clearAllRecords, getExistingUsgIds, getRecordsForMinute, deleteRecordsFromMinute, getMinuteSummary, getAllRecords } from "./lib/db.js";
 
 const SYNC_STATE_KEY="syncState";
 const SETTINGS_KEY="settings";
@@ -15,6 +15,8 @@ let syncState={
 let quotaCache=null; // {at, data}
 const QUOTA_TTL=30*1000;
 let abortFlag=false;
+let mismatchResolver=null;
+let mismatchPendingDetails=null;
 
 function nowIso(){ return new Date().toISOString(); }
 async function getSettings(){
@@ -127,15 +129,35 @@ async function runSync(mode="incremental"){
     try{ keyNames=await fetchKeyNames(workspaceId); if(Object.keys(keyNames).length) await chrome.storage.local.set({keyNames}); }catch{}
 
     const MAX_FULL_PAGES=2000;
-    const INCREMENTAL_PAGES=settings.turbo ? 10 : 5;
+    // 增量改为动态：不再固定 5/10 页，而是拉到与本地重叠为止；上限 2000 防止失控
     const FETCH_BATCH=settings.turbo ? 10 : 5;
     const SLEEP_MS=settings.turbo ? 0 : 120;
-    const maxPages = mode==="full" ? MAX_FULL_PAGES : INCREMENTAL_PAGES;
+    const maxPages = mode==="full" ? MAX_FULL_PAGES : 2000;
     let page=0;
     let totalInserted=0;
     let deepestPageFetched=-1;
     let windowBoundaryReached=false;
     let consecutiveEmptyBatches=0;
+    let foundOverlap=false;
+    // 预加载本地 usg_id 集合用于快速判重（首次增量时）
+    let localUsgSet=new Set();
+    let minuteCache=new Map(); // minute -> {count, tokenSum, costRaw}
+    if(mode==="incremental"){
+      try{
+        const allLocal = await getAllRecords();
+        for(const r of allLocal){
+          localUsgSet.add(r.usg_id);
+          const minute = r.created_at ? r.created_at.slice(0,16) : "";
+          if(minute){
+            let entry=minuteCache.get(minute);
+            if(!entry) minuteCache.set(minute, {count:0, tokenSum:0, costRaw:0});
+            entry.count++;
+            entry.tokenSum += (r.input_tokens||0)+(r.output_tokens||0)+(r.cache_read_tokens||0);
+            entry.costRaw += (r.cost_raw||0);
+          }
+        }
+      }catch(e){ console.warn("preload local cache failed", e); }
+    }
 
     while(page < maxPages){
       if(abortFlag){
@@ -143,11 +165,16 @@ async function runSync(mode="incremental"){
         return {ok:false, error:"已取消", partialInserted:totalInserted, canceled:true};
       }
       const batchPages=[...Array(Math.min(FETCH_BATCH, maxPages-page))].map((_,i)=> page+i);
-      setSyncState({page, message:`正在拉取第 ${page+1}–${page+batchPages.length} 页…`, progress: 15 + Math.round((page/maxPages)*70) });
+      // 进度：增量时按已拉页数估算，全量时按 maxPages
+      let progBase = mode==="full" ? 15 + Math.round((page/maxPages)*70) : 15 + Math.min(70, Math.round((page/20)*70));
+      setSyncState({page, message:`正在拉取第 ${page+1}–${page+batchPages.length} 页…`, progress: progBase });
       const batchMap=await fetchUsageBatch(workspaceId, batchPages);
       let batchInserted=0;
       let batchFullPages=0;
       let batchFailed=0;
+      let batchHasOverlap=false;
+      let batchMismatchMinute=null;
+      let batchMismatchInfo=null;
       for(const p of batchPages){
         const res=batchMap.get(p);
         if(!res || res.error){
@@ -176,13 +203,109 @@ async function runSync(mode="incremental"){
           cost_raw:r.cost_raw||0, cost_usd: r.cost_usd!=null? r.cost_usd : (r.cost_raw||0)/1e8,
           key_id:r.key_id||"", session_id:r.session_id||"", plan:r.plan||null
         }));
+        // 增量：检测重叠与分钟级一致性
+        if(mode==="incremental" && localUsgSet.size>0){
+          const existingIds = new Set(dbRecs.filter(r=> localUsgSet.has(r.usg_id)).map(r=>r.usg_id));
+          if(existingIds.size>0){
+            batchHasOverlap=true;
+            // 取第一个重叠记录的分钟作为检测点
+            const overlapRec = dbRecs.find(r=> existingIds.has(r.usg_id));
+            const minute = overlapRec ? overlapRec.created_at.slice(0,16) : "";
+            if(minute){
+              const fetchedMinuteRecs = dbRecs.filter(r=> r.created_at.slice(0,16)===minute);
+              const localSummary = minuteCache.get(minute);
+              const fetchedCount = fetchedMinuteRecs.length;
+              const fetchedTokenSum = fetchedMinuteRecs.reduce((s,r)=> s + (r.input_tokens||0)+(r.output_tokens||0)+(r.cache_read_tokens||0),0);
+              const fetchedCost = fetchedMinuteRecs.reduce((s,r)=> s + (r.cost_raw||0),0);
+              const localCount = localSummary ? localSummary.count : 0;
+              const localTokenSum = localSummary ? localSummary.tokenSum : 0;
+              const localCost = localSummary ? localSummary.costRaw : 0;
+              const mismatch = !localSummary || localCount!==fetchedCount || localTokenSum!==fetchedTokenSum || localCost!==fetchedCost;
+              if(mismatch){
+                batchMismatchMinute=minute;
+                batchMismatchInfo={minute, fetchedCount, localCount, fetchedTokenSum, localTokenSum, fetchedCost, localCost, existingIds: [...existingIds].slice(0,3)};
+                console.warn(`[GoGauge] 分钟级不一致 ${minute} 本地${localCount}/${localTokenSum} vs 远端${fetchedCount}/${fetchedTokenSum}`);
+              }
+            }
+          }
+        }
+        // 处理写入
+        let toInsert = dbRecs;
+        if(mode==="incremental"){
+          // 增量只插入本地没有的
+          toInsert = dbRecs.filter(r=> !localUsgSet.has(r.usg_id));
+          // 如果本批有重叠且无不一致，说明已追到历史，可以只插入新记录后准备结束
+          // 如果有不一致，则等待用户决策
+          if(batchMismatchMinute){
+            // 暂停并询问用户
+            mismatchPendingDetails={minute: batchMismatchMinute, info: batchMismatchInfo, page: p, workspaceId};
+            setSyncState({phase:"mismatch", message:`检测到 ${batchMismatchMinute} 本地与远端不一致，等待用户选择…`, progress: progBase});
+            // 通知前端
+            try{ chrome.runtime.sendMessage({type:"SYNC_MISMATCH", details: mismatchPendingDetails}); }catch{}
+            // 也用 notification 兜底
+            try{ chrome.notifications?.create({type:"basic", iconUrl:"icons/icon128.png", title:"GoGauge 检测到缓存不一致", message:`${batchMismatchMinute} 本地${batchMismatchInfo.localCount}条 vs 远端${batchMismatchInfo.fetchedCount}条，是否重建？`}); }catch{}
+            const choice = await new Promise(resolve=>{
+              mismatchResolver=resolve;
+              // 超时 5 分钟默认按拼接处理
+              setTimeout(()=>{ if(mismatchResolver){ mismatchResolver("splice"); mismatchResolver=null; } }, 300000);
+            });
+            mismatchPendingDetails=null;
+            if(choice==="rebuild"){
+              console.log("[GoGauge] 用户选择重建，全量清空");
+              await clearAllRecords();
+              localUsgSet.clear();
+              minuteCache.clear();
+              // 全量插入本批所有
+              toInsert = dbRecs;
+              // 后续按全量继续，不再检测
+              // 为避免再次触发，清空 local set 后后续批次不会再判重叠
+            }else if(choice==="splice"){
+              console.log("[GoGauge] 用户选择拼接，删除该分钟起本地记录");
+              try{ await deleteRecordsFromMinute(batchMismatchMinute); }catch(e){ console.warn(e); }
+              // 从缓存中移除该分钟及之后的本地记录
+              for(const key of [...minuteCache.keys()]){
+                if(key >= batchMismatchMinute) minuteCache.delete(key);
+              }
+              for(const id of [...localUsgSet]){
+                // 粗略：无法精确知道哪些 id 属于该分钟，重新加载更安全
+              }
+              // 重新加载本地集合（简化：清空后后续不再判重叠，直接插入）
+              // 为了简单，拼接后清空 localUsgSet，后续直接插入
+              // 实际应重新构建，但为性能先清空
+              // 插入本批全部
+              toInsert = dbRecs;
+              // 清空后后续不再检测
+              localUsgSet.clear();
+              minuteCache.clear();
+            }else{
+              // ignore: 仅插入新记录
+              // toInsert 已是新记录
+            }
+          }
+        }
         try{
-          const n=await bulkPutRecords(dbRecs);
-          batchInserted += dbRecs.length;
-          totalInserted += dbRecs.length;
+          if(toInsert.length){
+            const n=await bulkPutRecords(toInsert);
+            batchInserted += toInsert.length;
+            totalInserted += toInsert.length;
+            // 更新本地缓存
+            for(const r of toInsert){
+              localUsgSet.add(r.usg_id);
+              const minute=r.created_at.slice(0,16);
+              let e=minuteCache.get(minute);
+              if(!e){ e={count:0, tokenSum:0, costRaw:0}; minuteCache.set(minute,e); }
+              e.count++;
+              e.tokenSum += (r.input_tokens||0)+(r.output_tokens||0)+(r.cache_read_tokens||0);
+              e.costRaw += (r.cost_raw||0);
+            }
+          }
         }catch(e){
           console.error("bulkPut error",e);
           batchFailed++;
+        }
+        // 记录是否需要结束增量
+        if(batchHasOverlap && !batchMismatchMinute){
+          foundOverlap=true;
         }
       }
       page += FETCH_BATCH;
@@ -202,7 +325,8 @@ async function runSync(mode="incremental"){
       }else{
         consecutiveEmptyBatches=0;
       }
-      if(mode==="incremental" && batchInserted===0){
+      if(mode==="incremental" && foundOverlap){
+        console.log("[GoGauge] 增量已追到历史重叠点，结束");
         break;
       }
       if(SLEEP_MS>0) await new Promise(r=>setTimeout(r, SLEEP_MS));
@@ -303,6 +427,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
       const url=chrome.runtime.getURL("dashboard/dashboard.html");
       chrome.tabs.create({url});
       sendResponse({ok:true});
+      return;
+    }
+    if(type==="RESOLVE_MISMATCH"){
+      const choice = payload && payload.choice ? payload.choice : payload;
+      if(mismatchResolver){
+        mismatchResolver(choice);
+        mismatchResolver=null;
+        mismatchPendingDetails=null;
+      }
+      sendResponse({ok:true});
+      return;
+    }
+    if(type==="GET_MISMATCH"){
+      sendResponse({ok:true, details: mismatchPendingDetails});
       return;
     }
     sendResponse({ok:false, error:"unknown type"});
