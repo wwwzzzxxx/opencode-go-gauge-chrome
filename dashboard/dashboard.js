@@ -490,9 +490,8 @@ async function resolveMismatch(choice){
 document.getElementById("mismatch-rebuild")?.addEventListener("click", ()=> resolveMismatch("rebuild"));
 document.getElementById("mismatch-splice")?.addEventListener("click", ()=> resolveMismatch("splice"));
 document.getElementById("mismatch-ignore")?.addEventListener("click", ()=> resolveMismatch("ignore"));
-document.getElementById("mismatch-modal")?.addEventListener("click", (e)=>{
-  if(e.target.id==="mismatch-modal") hideMismatchModal();
-});
+// 已改为不可点遮罩关闭，必须三选一
+// document.getElementById("mismatch-modal")?.addEventListener("click", ... ) 已移除
 
 chrome.runtime.onMessage.addListener((msg)=>{
   if(msg.type==="SYNC_MISMATCH"){

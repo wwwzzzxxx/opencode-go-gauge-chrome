@@ -251,6 +251,7 @@ async function runSync(mode="incremental"){
     // 预加载本地 usg_id 集合用于快速判重（首次增量时）
     let localUsgSet=new Set();
     let minuteCache=new Map(); // minute -> {count, tokenSum, costRaw}
+    let preMismatchChecked=false;
     if(mode==="incremental"){
       try{
         const allLocal = await getAllRecords();
@@ -266,6 +267,50 @@ async function runSync(mode="incremental"){
           }
         }
       }catch(e){ console.warn("preload local cache failed", e); }
+      // 增量：扫完总数前先做一次分钟级预检，立即弹窗（不可点掉），避免扫过程中连弹
+      if(mode==="incremental" && localUsgSet.size>0 && !preMismatchChecked){
+        preMismatchChecked=true;
+        try{
+          const probePage=await fetchUsagePage(workspaceId, 0);
+          if(probePage.length){
+            const probeMinute = probePage[0].created_at.slice(0,16);
+            const fetchedForMinute = probePage.filter(r=> r.created_at.slice(0,16)===probeMinute);
+            const localSummary = minuteCache.get(probeMinute);
+            if(localSummary){
+              const fCnt=fetchedForMinute.length;
+              const fSum=fetchedForMinute.reduce((s,r)=> s + (r.input_tokens||0)+(r.output_tokens||0)+(r.cache_read_tokens||0),0);
+              const lCnt=localSummary.count;
+              const lSum=localSummary.tokenSum;
+              if(fCnt!==lCnt || fSum!==lSum){
+                const details={count:1, list:[{minute:probeMinute, info:{localCount:lCnt, fetchedCount:fCnt, localTokenSum:lSum, fetchedTokenSum:fSum}}], summary:`${probeMinute} 本地${lCnt}条/Token${lSum} vs 远端${fCnt}条/Token${fSum}`};
+                mismatchPendingDetails=details;
+                setSyncState({phase:"mismatch", message:`检测到 ${probeMinute} 本地与远端不一致，等待用户选择…`, progress:15});
+                try{ chrome.runtime.sendMessage({type:"SYNC_MISMATCH", details}); }catch{}
+                try{ chrome.notifications.create("gogauge-mismatch",{type:"basic", iconUrl:"icons/icon128.png", title:"GoGauge 检测到缓存不一致", message:`${probeMinute} 本地${lCnt} vs 远端${fCnt}，需选择`, requireInteraction:true}); }catch{}
+                // 若无仪表盘打开，5秒后自动打开
+                try{
+                  const tabs=await chrome.tabs.query({url:chrome.runtime.getURL("dashboard/dashboard.html")});
+                  if(!tabs.length) setTimeout(()=> chrome.tabs.create({url:chrome.runtime.getURL("dashboard/dashboard.html")}).catch(()=>{}), 800);
+                }catch{}
+                const choice = await new Promise(resolve=>{
+                  mismatchResolver=resolve;
+                  setTimeout(()=>{ if(mismatchResolver){ mismatchResolver("ignore"); mismatchResolver=null; } }, 300000);
+                });
+                mismatchPendingDetails=null;
+                if(choice==="rebuild"){
+                  await clearAllRecords();
+                  localUsgSet.clear(); minuteCache.clear();
+                }else if(choice==="splice"){
+                  for(const m of details.list) try{ await deleteRecordsFromMinute(m.minute); }catch{}
+                  minuteCache.clear(); localUsgSet.clear();
+                  // 重新加载本地（简化：清空后后续按全量插入）
+                }
+                // ignore 则继续
+              }
+            }
+          }
+        }catch(e){ console.warn("pre-check mismatch failed", e); }
+      }
     }
 
     while(page < maxPages){
