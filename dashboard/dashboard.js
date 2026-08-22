@@ -67,7 +67,7 @@ async function refreshHeader(){
 function renderQuota(q){
   const box=$("#quota-blocks");
   if(!q || !q.success){
-    if(!q) box.innerHTML=`<div class="qw">暂无配额数据 — 点击「开始统计」后自动获取</div>`;
+    if(!q) box.innerHTML=`<div class="qw">暂无配额数据 — 点击「增量同步」后自动获取</div>`;
     else box.innerHTML=`<div class="qw">获取失败：${(q.error||"").slice(0,120)}</div>`;
     return;
   }
@@ -100,7 +100,7 @@ async function renderHome(){
   const usdCny=(await chrome.storage.local.get("usdCny")).usdCny || 7.2;
   const cny=totals.total_cost_usd*usdCny;
   if(!totals.request_count){
-    grid.innerHTML=`<div class="hint" style="grid-column:1/-1">暂无数据 — 点击「开始统计」后在此查看概览</div>`;
+    grid.innerHTML=`<div class="hint" style="grid-column:1/-1">暂无数据 — 点击「增量同步」后在此查看概览</div>`;
   } else {
     grid.innerHTML=[
       {l:"缓存命中率", v: totals.hit_rate.toFixed(1)+"%", s:`命中 ${fmtTokens(totals.cache_hit_tokens)} · 未命中 ${fmtTokens(totals.uncached_input_tokens)}`},
@@ -137,7 +137,7 @@ function setChartEmpty(canvasId, empty, msg){
       ph.className="chart-empty";
       canvas.parentElement.appendChild(ph);
     }
-    ph.textContent=msg||"暂无数据 — 点击右上角『开始统计』后查看";
+    ph.textContent=msg||"暂无数据 — 点击右上角『增量同步』后查看";
     ph.style.display="flex";
     return true;
   }else{
@@ -278,7 +278,7 @@ async function renderRecords(){
   const data=await getRecordsPage(currentRecPage, 20, currentRecPeriod, currentRecModel);
   const body=$("#records-body");
   if(!data.items.length){
-    body.innerHTML=`<tr><td colspan="8" style="text-align:center;color:var(--muted)">暂无记录 — 请先「开始统计」</td></tr>`;
+    body.innerHTML=`<tr><td colspan="8" style="text-align:center;color:var(--muted)">暂无记录 — 请先「增量同步」</td></tr>`;
   } else {
     body.innerHTML= data.items.map(r=>`
       <tr>

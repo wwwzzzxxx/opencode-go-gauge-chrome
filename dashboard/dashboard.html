@@ -17,7 +17,7 @@
     <span id="sync-indicator" class="sync-ind hidden"><span class="spinner sm"></span>同步中</span>
     <span id="tb-workspace" class="chip">—</span>
     <button id="btn-theme" class="pill small">◐ 暗色</button>
-    <button id="btn-sync" class="pill small primary">▶ 开始统计</button>
+    <button id="btn-sync" class="pill small primary">▶ 增量同步</button>
     <button id="btn-sync-full" class="pill small" title="全量同步最多 2000 页">全部同步</button>
     <span id="tb-updated" class="chip num">—</span>
   </div>
@@ -177,7 +177,7 @@
           <label class="switch"><input type="checkbox" id="set-turbo"><span class="slider"></span></label>
         </div>
 <div class="set-row">
-          <div><div class="sl">手动同步</div><div class="sd">插件不会自动拉取数据，需点击「开始统计」才会请求接口</div></div>
+          <div><div class="sl">手动同步</div><div class="sd">插件不会自动拉取数据，需点击「增量同步」才会请求接口</div></div>
           <div style="display:flex;gap:8px">
             <button class="btn" id="btn-start-incr">增量同步</button>
             <button class="btn ghost" id="btn-start-full">全量同步</button>
