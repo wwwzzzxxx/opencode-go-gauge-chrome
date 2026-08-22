@@ -276,7 +276,8 @@ async function runSync(mode="incremental"){
       // 进度：增量时按已拉页数估算，全量时按 maxPages
       let progBase = mode==="full" ? 15 + Math.round((page/maxPages)*70) : 15 + Math.min(70, Math.round((page/200)*70));
       const totalForMsg = (mode==="full" && maxPages) ? ` / 共 ${maxPages} 页` : "";
-      setSyncState({page, totalPages: maxPages, message:`正在拉取第 ${page+1}–${page+batchPages.length}${totalForMsg}…`, progress: progBase });
+      if(mode==="full") setSyncState({page, totalPages: maxPages, message:`正在拉取第 ${page+1}–${page+batchPages.length}${totalForMsg}…`, progress: progBase });
+      else setSyncState({page, message:`正在拉取第 ${page+1}–${page+batchPages.length}…`, progress: progBase });
       const batchMap=await fetchUsageBatch(workspaceId, batchPages);
       let batchInserted=0;
       let batchFullPages=0;
@@ -428,7 +429,8 @@ async function runSync(mode="incremental"){
       }
       page += FETCH_BATCH;
       let progAfter = mode==="full" ? 15 + Math.round((Math.min(page,maxPages)/maxPages)*70) : 15 + Math.min(70, Math.round((page/200)*70));
-      setSyncState({inserted:totalInserted, page, totalPages: maxPages, progress: progAfter });
+      if(mode==="full") setSyncState({inserted:totalInserted, page, totalPages: maxPages, progress: progAfter });
+      else setSyncState({inserted:totalInserted, page, progress: progAfter });
 
       if(windowBoundaryReached){
         setSyncState({message:"已到达所选时间窗口边界，停止拉取"});
