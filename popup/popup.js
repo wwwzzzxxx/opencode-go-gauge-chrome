@@ -1,5 +1,23 @@
 import { computeTotals } from "../src/lib/db.js";
 
+// theme — 跟随系统
+(async()=>{
+  try{
+    const s=await chrome.storage.local.get("theme");
+    let stored=s.theme || "auto";
+    let resolved = (stored==="light"||stored==="dark") ? stored : (window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");
+    document.documentElement.setAttribute("data-theme", resolved);
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", e=>{
+      chrome.storage.local.get("theme").then(s2=>{
+        let st=s2.theme||"auto";
+        if(st==="auto"){
+          document.documentElement.setAttribute("data-theme", e.matches?"dark":"light");
+        }
+      });
+    });
+  }catch{}
+})();
+
 const $ = (s)=> document.querySelector(s);
 let currentPeriod="today";
 let syncPoll=null;

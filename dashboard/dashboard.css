@@ -1,6 +1,9 @@
 *{box-sizing:border-box}html{font-size:14px}
 :root{--bg:#f6f7fb;--card:#fff;--line:#e2e8f0;--text:#0f172a;--muted:#64748b;--accent:#0b1220;--primary:#4f8ef7;--green:#22c55e;--cyan:#06b6d4;--orange:#f59e0b;--radius:12px}
 [data-theme="dark"]{--bg:#0b1220;--card:#111c33;--line:#1e2a44;--text:#e2e8f0;--muted:#94a3b8;--accent:#e2e8f0}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]):not([data-theme="dark"]){--bg:#0b1220;--card:#111c33;--line:#1e2a44;--text:#e2e8f0;--muted:#94a3b8;--accent:#e2e8f0}
+}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family: -apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,"PingFang SC","Microsoft YaHei",sans-serif}
 a{color:var(--primary)}
 .tb{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}

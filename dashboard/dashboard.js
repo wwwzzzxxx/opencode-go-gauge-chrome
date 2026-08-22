@@ -1,11 +1,10 @@
-import { computeTotals, computeModelStats, computeDailyStats, computeTodayTrend, listModels, getRecordsPage, getSessionStats2, getQuotaCache, countRecords } from "../src/lib/db.js";
+import { computeTotals, computeModelStats, computeDailyStats, computeTodayTrend, listModels, getRecordsPage, getQuotaCache, countRecords } from "../src/lib/db.js";
 
 const $=(s)=>document.querySelector(s);
 const $$=(s)=>document.querySelectorAll(s);
 let currentHomePeriod="today";
 let currentStatsPeriod="30d";
 let currentRecPage=1, currentRecModel="", currentRecPeriod="30d";
-let currentSessPage=1, currentSessPeriod="30d";
 let charts={};
 const COLORS={input:"#4f8ef7", output:"#22c55e", reasoning:"#a78bfa", cache:"#06b6d4", cost:"#d97706"};
 let syncPoll=null;
@@ -298,30 +297,6 @@ async function renderRecords(){
   $("#rec-prev")?.addEventListener("click", ()=>{ if(currentRecPage>1){ currentRecPage--; renderRecords(); }});
   $("#rec-next")?.addEventListener("click", ()=>{ currentRecPage++; renderRecords(); });
 }
-async function renderSessions(){
-  const data=await getSessionStats2(currentSessPage, 20, currentSessPeriod);
-  const body=$("#sessions-body");
-  if(!data.items.length){
-    body.innerHTML=`<tr><td colspan="8" style="text-align:center;color:var(--muted)">暂无会话</td></tr>`;
-  } else {
-    body.innerHTML= data.items.map(s=>`
-      <tr>
-        <td title="${s.session_id}">${s.session_id.slice(0,16)}</td>
-        <td class="num">${fmtInt(s.request_count)}</td>
-        <td class="num">${fmtTokens(s.uncached_input_tokens)}</td>
-        <td class="num">${fmtTokens(s.total_output_tokens)}</td>
-        <td class="num">${fmtTokens(s.total_tokens)}</td>
-        <td class="num">${fmtUSD(s.total_cost_usd)}</td>
-        <td>${s.models.slice(0,40)}</td>
-        <td>${fmtTime(s.latest)}</td>
-      </tr>`).join("");
-  }
-  const pager=$("#sessions-pager");
-  pager.innerHTML=`<span class="hint">共 ${fmtInt(data.total)} 个会话 · 第 ${data.page}/${data.totalPages} 页</span>
-    <span><button id="sess-prev" ${data.page<=1?"disabled":""}>上一页</button> <button id="sess-next" ${data.page>=data.totalPages?"disabled":""}>下一页</button></span>`;
-  $("#sess-prev")?.addEventListener("click", ()=>{ if(currentSessPage>1){ currentSessPage--; renderSessions(); }});
-  $("#sess-next")?.addEventListener("click", ()=>{ currentSessPage++; renderSessions(); });
-}
 
 // navigation
 function showPage(id){
@@ -332,7 +307,6 @@ function showPage(id){
   if(id==="home") renderHome();
   if(id==="stats") renderStats();
   if(id==="records") renderRecords();
-  if(id==="sessions") renderSessions();
 }
 $$(".side-item").forEach(btn=> btn.addEventListener("click", ()=> showPage(btn.dataset.page)));
 
@@ -351,14 +325,6 @@ $("#stats-pills").addEventListener("click", (e)=>{
   currentStatsPeriod=b.dataset.r;
   renderStats();
 });
-$("#sess-pills").addEventListener("click", (e)=>{
-  const b=e.target.closest("[data-r]"); if(!b) return;
-  $$("#sess-pills .pill").forEach(x=>x.classList.remove("active"));
-  b.classList.add("active");
-  currentSessPeriod=b.dataset.r;
-  currentSessPage=1;
-  renderSessions();
-});
 $$("#page-stats [data-dim]").forEach(btn=>{
   btn.addEventListener("click", ()=>{
     $$("#page-stats [data-dim]").forEach(x=>x.classList.remove("active"));
@@ -369,24 +335,55 @@ $$("#page-stats [data-dim]").forEach(btn=>{
 $("#rec-model-filter").addEventListener("change", (e)=>{ currentRecModel=e.target.value; currentRecPage=1; renderRecords(); });
 $("#rec-period").addEventListener("change", (e)=>{ currentRecPeriod=e.target.value; currentRecPage=1; renderRecords(); });
 
-// theme
-async function applyTheme(t){
-  document.documentElement.setAttribute("data-theme", t);
-  $("#btn-theme").textContent= t==="dark"? "☀ 亮色" : "◐ 暗色";
-  $("#btn-toggle-theme").textContent= t==="dark"? "切换到亮色" : "切换到暗色";
-  await chrome.storage.local.set({theme:t});
+// theme — 跟随系统 (auto) + 亮/暗 手动覆盖
+let currentStoredTheme = "auto";
+const _mediaDark = window.matchMedia("(prefers-color-scheme: dark)");
+function resolveTheme(stored){
+  if(stored==="light" || stored==="dark") return stored;
+  return _mediaDark.matches ? "dark" : "light";
 }
-$("#btn-theme").addEventListener("click", async()=>{
-  const cur=document.documentElement.getAttribute("data-theme");
-  applyTheme(cur==="dark"?"light":"dark");
+async function applyTheme(t){
+  let stored = t || "auto";
+  if(stored!=="auto" && stored!=="light" && stored!=="dark") stored="auto";
+  currentStoredTheme = stored;
+  let resolved = resolveTheme(stored);
+  document.documentElement.setAttribute("data-theme", resolved);
+  document.documentElement.setAttribute("data-theme-choice", stored);
+  let btn=document.getElementById("btn-theme");
+  if(btn){
+    if(stored==="auto") btn.textContent = resolved==="dark" ? "◐ 自动·暗" : "◐ 自动·亮";
+    else btn.textContent = stored==="dark" ? "☀ 亮色" : "◐ 暗色";
+    btn.title = stored==="auto" ? "跟随系统，点击切换" : "当前"+(stored==="dark"?"暗色":"亮色")+", 点击切换";
+  }
+  document.querySelectorAll("#set-theme-pills .pill").forEach(b=>{
+    b.classList.toggle("active", b.dataset.v===stored);
+  });
+  await chrome.storage.local.set({theme: stored});
+}
+_mediaDark.addEventListener("change", ()=>{
+  if(currentStoredTheme==="auto"){
+    document.documentElement.setAttribute("data-theme", _mediaDark.matches?"dark":"light");
+    let btn=document.getElementById("btn-theme");
+    if(btn) btn.textContent = _mediaDark.matches ? "◐ 自动·暗" : "◐ 自动·亮";
+  }
 });
-$("#btn-toggle-theme").addEventListener("click", async()=>{
-  const cur=document.documentElement.getAttribute("data-theme");
-  applyTheme(cur==="dark"?"light":"dark");
+document.getElementById("btn-theme")?.addEventListener("click", async()=>{
+  let next;
+  if(currentStoredTheme==="auto") next = resolveTheme("auto")==="dark" ? "light" : "dark";
+  else if(currentStoredTheme==="light") next="dark";
+  else if(currentStoredTheme==="dark") next="auto";
+  else next="auto";
+  await applyTheme(next);
+});
+document.getElementById("set-theme-pills")?.addEventListener("click", async(e)=>{
+  const b=e.target.closest("[data-v]"); if(!b) return;
+  await applyTheme(b.dataset.v);
 });
 (async()=>{
   const s=await chrome.storage.local.get("theme");
-  applyTheme(s.theme||"light");
+  let initial = s.theme || "auto";
+  if(initial!=="auto" && initial!=="light" && initial!=="dark") initial="auto";
+  await applyTheme(initial);
 })();
 
 // sync buttons
@@ -407,7 +404,7 @@ $("#btn-start-full").addEventListener("click", async()=>{
 $("#btn-clear").addEventListener("click", async()=>{
   if(!confirm("确定清空所有本地用量记录？此操作不可恢复。")) return;
   const r=await chrome.runtime.sendMessage({type:"CLEAR_DATA"});
-  if(r && r.ok){ toast("已清空"); renderHome(); renderRecords(); renderSessions(); refreshHeader(); }
+  if(r && r.ok){ toast("已清空"); renderHome(); renderRecords(); refreshHeader(); }
   else toast("清空失败", false);
 });
 $("#btn-go-opencode").addEventListener("click", ()=> chrome.tabs.create({url:"https://opencode.ai"}));
@@ -445,7 +442,6 @@ function startPolling(){
         if(page==="home") renderHome();
         if(page==="stats") renderStats();
         if(page==="records") renderRecords();
-        if(page==="sessions") renderSessions();
         if(r.data.phase==="done") toast(r.data.message || "同步完成");
         else if(r.data.phase==="error") toast(r.data.message || "同步失败", false);
       }
