@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GoGauge</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="hdr">
+    <div class="hdr-left">
+      <img src="../icons/icon32.png" alt="GoGauge" class="logo">
+      <div>
+        <div class="title">GoGauge</div>
+        <div class="subtitle">OpenCode Go 用量仪表盘</div>
+      </div>
+    </div>
+    <button id="btn-open-dash" class="icon-btn" title="打开完整仪表盘">⧉</button>
+  </header>
+
+  <div id="auth-banner" class="banner" hidden>
+    <span class="banner-dot warn"></span>
+    <span id="auth-text">未登录</span>
+    <button id="btn-go-login" class="pill ghost">去登录</button>
+  </div>
+  <div id="auth-ok" class="banner ok" hidden>
+    <span class="banner-dot ok"></span>
+    <span id="auth-ok-text">已登录</span>
+    <span id="workspace-chip" class="chip">—</span>
+  </div>
+
+  <div class="card">
+    <div class="card-h">
+      <h3>配额窗口</h3>
+      <span id="quota-updated" class="hint">—</span>
+    </div>
+    <div id="quota-box" class="quota-box">
+      <div class="skeleton">点击「开始统计」后显示配额</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-h">
+      <h3>用量概览</h3>
+      <div class="pill-row tiny">
+        <button class="pill active" data-period="today">今天</button>
+        <button class="pill" data-period="7d">7天</button>
+        <button class="pill" data-period="30d">30天</button>
+        <button class="pill" data-period="all">全部</button>
+      </div>
+    </div>
+    <div id="totals-grid" class="totals-grid"></div>
+    <div id="cache-bar" class="cache-bar" hidden>
+      <div class="cache-bar-track"><div id="cache-bar-fill" class="cache-bar-fill"></div></div>
+      <div class="cache-bar-label"><span id="cache-bar-text">缓存命中率 —</span></div>
+    </div>
+  </div>
+
+  <div id="progress-wrap" class="card progress-card" hidden>
+    <div class="progress-head">
+      <span id="progress-msg">准备中…</span>
+      <span id="progress-pct" class="hint">0%</span>
+    </div>
+    <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+    <div class="progress-meta">
+      <span id="progress-detail" class="hint">—</span>
+      <button id="btn-cancel" class="pill ghost small">取消</button>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="btn-start" class="btn primary"><span class="btn-ico">▶</span> 开始统计</button>
+    <button id="btn-full" class="btn ghost" title="全量同步最多 2000 页，数据量较大时可能耗时较长">全量同步</button>
+  </div>
+  <div class="actions secondary">
+    <button id="btn-dashboard" class="btn block">打开完整仪表盘</button>
+  </div>
+
+  <div id="last-sync" class="foot hint">—</div>
+  <div id="tip" class="tip">首次使用请先登录 <b>opencode.ai</b>，随后点击「开始统计」。数据仅存储在本地，不会自动拉取。</div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
