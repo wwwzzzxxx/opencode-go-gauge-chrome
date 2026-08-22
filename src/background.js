@@ -2,7 +2,7 @@
 // NOTE: Must NOT use dynamic import() in ServiceWorker scope (banned per HTML spec).
 // All imports are static at top level.
 import { fetchQuota, fetchUsagePage, fetchKeyNames, resolveWorkspaceId, AuthError } from "./lib/api.js";
-import { bulkPutRecords, pruneOldRecords, clearAllRecords, getExistingUsgIds, getRecordsForMinute, deleteRecordsFromMinute, getMinuteSummary, getAllRecords } from "./lib/db.js";
+import { bulkPutRecords, pruneOldRecords, clearAllRecords, getExistingUsgIds, getRecordsForMinute, deleteRecordsFromMinute, getMinuteSummary, getAllRecords, countRecords } from "./lib/db.js";
 
 const SYNC_STATE_KEY="syncState";
 const SETTINGS_KEY="settings";
@@ -94,31 +94,74 @@ async function fetchUsageBatch(workspaceId, pages){
   for(const r of results) map.set(r.page, r);
   return map;
 }
-async function findTotalPages(workspaceId, maxGuess=2000){
-  // 二分探测总页数：先确认 high 为空，若 2000 仍有数据则指数翻倍
-  setSyncState({message:"正在探测总页数…", progress:12});
+async function estimatePerPageBytes(workspaceId){
+  try{
+    const sample=await fetchUsagePage(workspaceId, 0);
+    if(!sample.length) return 15*1024;
+    const jsonLen = JSON.stringify(sample).length;
+    // IndexedDB 开销约 1.3 倍
+    return Math.max(8*1024, Math.ceil(jsonLen * 1.3));
+  }catch{ return 15*1024; }
+}
+async function getCurrentDbBytes(){
+  try{
+    if(navigator.storage && navigator.storage.estimate){
+      const est=await navigator.storage.estimate();
+      if(est && typeof est.usage==="number") return est.usage;
+    }
+  }catch{}
+  try{
+    const cnt=await countRecords();
+    return cnt * 12 * 1024; // 回退：按 12KB/条估
+  }catch{ return 0; }
+}
+async function findTotalPages(workspaceId, maxGuess=2048){
+  // 指数探测：2048→4096→8192... 直到空页，同时受 100MB 硬盘上限约束
+  const LIMIT_BYTES = 100 * 1024 * 1024;
+  const perPage = await estimatePerPageBytes(workspaceId);
+  const currentBytes = await getCurrentDbBytes();
+  const remaining = Math.max(0, LIMIT_BYTES - currentBytes);
+  const maxPagesBySize = Math.floor(remaining / perPage);
+  // 若剩余空间已不足一页，直接提示
+  if(maxPagesBySize < 1){
+    setSyncState({message:`本地已占用约 ${(currentBytes/1024/1024).toFixed(1)}MB，接近 100MB 上限`, progress:13});
+    return 0;
+  }
+  setSyncState({message:`正在探测总页数…(预估每页 ${(perPage/1024).toFixed(1)}KB，剩余可写入 ~${maxPagesBySize} 页)`, progress:12});
   try{
     const first=await fetchUsagePage(workspaceId, 0);
     if(!first.length) return 0;
   }catch{ return 0; }
   let low=0;
-  let high=maxGuess;
+  let high=Math.min(maxGuess, maxPagesBySize);
   let highRecs=[];
   try{ highRecs=await fetchUsagePage(workspaceId, high); }catch{ highRecs=[]; }
   let doublings=0;
-  while(highRecs.length>0 && doublings<4 && high<10000){
+  while(highRecs.length>0 && high < maxPagesBySize && high < 50000){
+    if((high * perPage + currentBytes) >= LIMIT_BYTES){
+      setSyncState({message:`已触及 100MB 上限，探测止于 ${high} 页`, progress:14});
+      break;
+    }
     low=high;
-    high*=2;
-    setSyncState({message:`探测上限 ${low}→${high} 页…`, progress:13});
+    high=Math.min(high*2, maxPagesBySize);
+    if(high<=low) break;
+    setSyncState({message:`探测上限 ${low}→${high} 页…(100MB 约 ${maxPagesBySize} 页)`, progress:13});
     try{ highRecs=await fetchUsagePage(workspaceId, high); }catch{ highRecs=[]; }
     doublings++;
+    if(doublings>10) break;
     await new Promise(r=>setTimeout(r, 200));
   }
-  // 二分
+  // 二分在 [low, high] 之间
   let steps=0;
-  while(high - low > 1 && steps < 20){
+  while(high - low > 1 && steps < 25){
     const mid=Math.floor((low+high)/2);
-    setSyncState({message:`二分探测 ${low+1}–${high} → 试 ${mid}…`, progress:13 + Math.round((steps/12)*2)});
+    // 若 mid 超过 100MB 限制，直接视为空
+    if((mid * perPage + currentBytes) >= LIMIT_BYTES){
+      high=mid;
+      steps++;
+      continue;
+    }
+    setSyncState({message:`二分探测 ${low+1}–${high} → 试 ${mid}…`, progress:13 + Math.round((steps/14)*2)});
     let recs=[];
     try{ recs=await fetchUsagePage(workspaceId, mid); }catch{ recs=[]; }
     if(recs.length===0) high=mid;
@@ -126,8 +169,15 @@ async function findTotalPages(workspaceId, maxGuess=2000){
     steps++;
     await new Promise(r=>setTimeout(r, 80));
   }
-  const total=low+1;
-  setSyncState({message:`探测完成：共 ${total} 页`, progress:15, totalPages: total});
+  let total=low+1;
+  // 最终再按 100MB 截断
+  const maxAllowed = Math.floor(remaining / perPage);
+  if(total > maxAllowed){
+    total = maxAllowed;
+    setSyncState({message:`探测完成：共 ${low+1} 页，但受 100MB 限制截断为 ${total} 页`, progress:15, totalPages: total});
+  } else {
+    setSyncState({message:`探测完成：共 ${total} 页 (预估 ${(total*perPage/1024/1024).toFixed(1)}MB)`, progress:15, totalPages: total});
+  }
   return total;
 }
 
@@ -164,31 +214,31 @@ async function runSync(mode="incremental"){
     let keyNames={};
     try{ keyNames=await fetchKeyNames(workspaceId); if(Object.keys(keyNames).length) await chrome.storage.local.set({keyNames}); }catch{}
 
-    let MAX_FULL_PAGES=2000;
-    // 增量改为动态：不再固定 5/10 页，而是拉到与本地重叠为止；上限 2000 防止失控
+    let MAX_FULL_PAGES=0; // 全量由二分探测决定，无固定 2000 上限
+    // 增量改为动态：不再固定 5/10 页，而是拉到与本地重叠为止；受 100MB 限制
     let FETCH_BATCH=settings.turbo ? 10 : 5;
     let SLEEP_MS=settings.turbo ? 0 : 120;
-    // 全量：先二分探测总页数，提升进度准确性与拉取效率
-    let maxPages = 2000;
+    let maxPages = 0;
     let totalPagesProbed = null;
     if(mode==="full"){
       try{
-        totalPagesProbed=await findTotalPages(workspaceId, 2000);
+        totalPagesProbed=await findTotalPages(workspaceId, 2048);
         if(totalPagesProbed>0){
           MAX_FULL_PAGES=totalPagesProbed;
           maxPages=totalPagesProbed;
-          // 极速下提升并发
-          FETCH_BATCH = settings.turbo ? 20 : 10;
+          // 极速下提升并发，100MB 内尽量一次拉完
+          FETCH_BATCH = settings.turbo ? 30 : 15;
+          SLEEP_MS = 0;
         } else {
           maxPages=0;
         }
       }catch(e){
         console.warn("findTotalPages failed", e);
-        maxPages=MAX_FULL_PAGES;
+        maxPages=0;
       }
     } else {
-      // 增量：上限 2000，实际会提前在重叠点结束
-      maxPages=2000;
+      // 增量：上限由 100MB 决定，实际会提前在重叠点结束
+      maxPages=50000; // 逻辑上限，实际受 100MB 与重叠点截断
       FETCH_BATCH=settings.turbo ? 10 : 5;
     }
     let page=0;
@@ -262,6 +312,15 @@ async function runSync(mode="incremental"){
           cost_raw:r.cost_raw||0, cost_usd: r.cost_usd!=null? r.cost_usd : (r.cost_raw||0)/1e8,
           key_id:r.key_id||"", session_id:r.session_id||"", plan:r.plan||null
         }));
+        // 100MB 硬盘上限：预估本批大小，超限则停止
+        try{
+          const estBatchBytes = JSON.stringify(dbRecs).length * 1.3;
+          const curBytes = await getCurrentDbBytes();
+          if(curBytes + estBatchBytes > 100*1024*1024){
+            setSyncState({phase:"error", running:false, message:`已达到 100MB 上限（当前约 ${(curBytes/1024/1024).toFixed(1)}MB，预估本批 ${(estBatchBytes/1024).toFixed(1)}KB），已停止`});
+            break;
+          }
+        }catch{}
         // 增量：检测重叠与分钟级一致性
         if(mode==="incremental" && localUsgSet.size>0){
           const existingIds = new Set(dbRecs.filter(r=> localUsgSet.has(r.usg_id)).map(r=>r.usg_id));
