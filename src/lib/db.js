@@ -1,14 +1,23 @@
-// IndexedDB wrapper — mirrors opencode-go-gauge logic but in browser
+// IndexedDB wrapper — mirrors opencode-go-gauge logic but in browser + ServiceWorker
 const DB_NAME = "goGauge";
 const DB_VERSION = 4;
 const STORE = "usage_records";
 const META_STORE = "meta";
 let dbPromise=null;
 
+function getIDB(){
+  // ServiceWorker vs Window: indexedDB may be on globalThis or self
+  if(typeof indexedDB !== "undefined") return indexedDB;
+  if(typeof self !== "undefined" && self.indexedDB) return self.indexedDB;
+  if(typeof globalThis !== "undefined" && globalThis.indexedDB) return globalThis.indexedDB;
+  throw new Error("IndexedDB not available in this context");
+}
+
 function openDB(){
   if(dbPromise) return dbPromise;
+  const idb=getIDB();
   dbPromise=new Promise((resolve,reject)=>{
-    const req=indexedDB.open(DB_NAME, DB_VERSION);
+    const req=idb.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded=(e)=>{
       const db=e.target.result;
       if(!db.objectStoreNames.contains(STORE)){
@@ -31,6 +40,7 @@ function openDB(){
     };
     req.onsuccess=()=>resolve(req.result);
     req.onerror=()=>reject(req.error);
+    req.onblocked=()=>console.warn("[GoGauge] IndexedDB blocked");
   });
   return dbPromise;
 }
@@ -239,7 +249,6 @@ export async function getSessionStats(page=1, pageSize=20, period="30d"){
   const start=(safePage-1)*pageSize;
   return { items: arr.slice(start, start+pageSize), total, page:safePage, totalPages, pageSize };
 }
-// cleaned getSessionStats above has syntax bug; provide correct wrapper
 export async function getSessionStats2(page=1,pageSize=20,period="30d"){
   const recs=await getFilteredRecords(period);
   const map=new Map();

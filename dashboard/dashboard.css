@@ -64,6 +64,7 @@ a{color:var(--primary)}
 .kpi-sub{font-size:11px;color:var(--muted)}
 .cache-detail{margin-top:10px;padding:10px;background:var(--bg);border:1px dashed var(--line);border-radius:10px;font-size:12px;color:var(--muted)}
 .chart-box{position:relative;width:100%}
+.chart-empty{display:flex;align-items:center;justify-content:center;min-height:180px;border:1px dashed var(--line);border-radius:10px;background:var(--bg);color:var(--muted);font-size:12px;text-align:center;padding:16px}
 .two{display:grid;grid-template-columns:1.2fr .8fr;gap:14px}
 @media(max-width:900px){.two{grid-template-columns:1fr}}
 .rank{display:grid;gap:8px}

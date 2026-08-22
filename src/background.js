@@ -1,5 +1,8 @@
 // Background service worker — single source of truth for sync & cookie auth
+// NOTE: Must NOT use dynamic import() in ServiceWorker scope (banned per HTML spec).
+// All imports are static at top level.
 import { fetchQuota, fetchUsagePage, fetchKeyNames, resolveWorkspaceId, AuthError } from "./lib/api.js";
+import { bulkPutRecords, pruneOldRecords, clearAllRecords } from "./lib/db.js";
 
 const SYNC_STATE_KEY="syncState";
 const SETTINGS_KEY="settings";
@@ -12,7 +15,6 @@ let syncState={
 let quotaCache=null; // {at, data}
 const QUOTA_TTL=30*1000;
 let abortFlag=false;
-let activeSyncPromise=null;
 
 function nowIso(){ return new Date().toISOString(); }
 async function getSettings(){
@@ -27,13 +29,13 @@ async function saveSettings(patch){
 }
 function setSyncState(patch){
   Object.assign(syncState, patch);
-  // broadcast
-  chrome.runtime.sendMessage({type:"SYNC_STATE", state:{...syncState}}).catch(()=>{});
+  // broadcast — ignore "no receiver" error
+  try{ chrome.runtime.sendMessage({type:"SYNC_STATE", state:{...syncState}}).catch(()=>{}); }catch{}
   chrome.storage.local.set({[SYNC_STATE_KEY]: syncState}).catch(()=>{});
 }
 
 // Check auth cookie — looks for `auth` cookie on opencode.ai
-export async function checkAuth(){
+async function checkAuth(){
   try{
     // try direct `auth`
     let c=await chrome.cookies.get({url:"https://opencode.ai/", name:"auth"});
@@ -42,10 +44,8 @@ export async function checkAuth(){
     const all=await chrome.cookies.getAll({domain:"opencode.ai"});
     for(const ck of all){
       if(ck.name==="auth" && ck.value) return { loggedIn:true, value:ck.value, cookie:ck };
-      // some setups store as `__Secure-auth` or just token in `auth` variant
       if(ck.name.toLowerCase().includes("auth") && ck.value) return { loggedIn:true, value:ck.value, cookie:ck };
     }
-    // also try opencode.ai without www
     const all2=await chrome.cookies.getAll({url:"https://opencode.ai"});
     for(const ck of all2){
       if(ck.name==="auth") return { loggedIn:!!ck.value, value:ck.value, cookie:ck };
@@ -115,10 +115,8 @@ async function runSync(mode="incremental"){
     setSyncState({message:"正在获取配额窗口…", progress:10});
     try{
       const quota=await fetchQuotaWithCache(workspaceHint);
-      // store quota for popup/dashboard
       await chrome.storage.local.set({lastQuota: quota});
     }catch(e){
-      // quota failure should not block usage sync
       console.warn("[GoGauge] quota fetch failed", e);
     }
     // optional key names
@@ -126,10 +124,6 @@ async function runSync(mode="incremental"){
     let keyNames={};
     try{ keyNames=await fetchKeyNames(workspaceId); if(Object.keys(keyNames).length) await chrome.storage.local.set({keyNames}); }catch{}
 
-    // usage sync — IndexedDB bulk put via offscreen? In SW we cannot directly use IndexedDB DOM, but SW does have indexedDB.
-    // We will fetch pages and then send to any open dashboard/popup to store? Simpler: do IndexedDB ops in SW directly using same DB_NAME.
-    // Import db helpers dynamically? They use indexedDB which is available in SW.
-    const { bulkPutRecords, pruneOldRecords } = await import("./lib/db.js");
     const MAX_FULL_PAGES=2000;
     const INCREMENTAL_PAGES=5;
     const FETCH_BATCH=5;
@@ -139,7 +133,6 @@ async function runSync(mode="incremental"){
     let deepestPageFetched=-1;
     let windowBoundaryReached=false;
     let consecutiveEmptyBatches=0;
-    let failedPages=0;
 
     while(page < maxPages){
       if(abortFlag){
@@ -161,24 +154,18 @@ async function runSync(mode="incremental"){
         }
         const records=res.records || [];
         if(!records.length){
-          // empty page -> no more data beyond
           continue;
         }
         if(records.length >= 50) batchFullPages++;
         deepestPageFetched=Math.max(deepestPageFetched, p);
-        // window filter for full mode
         let toStore=records;
         if(mode==="full" && windowDays){
           const boundary=Date.now() - windowDays*24*3600*1000;
-          // if earliest record earlier than boundary, we still store this page but mark to stop after
           const earliest=Math.min(...records.map(r=> new Date(r.created_at).getTime()));
           if(earliest < boundary){
             windowBoundaryReached=true;
           }
-          // optionally filter out old records beyond window to save space
-          // keep them but prune later
         }
-        // convert records to DB shape (already matches, ensure cost_usd)
         const dbRecs=toStore.map(r=>({
           usg_id:r.usg_id, created_at:r.created_at, model:r.model, provider:r.provider,
           input_tokens:r.input_tokens||0, output_tokens:r.output_tokens||0, reasoning_tokens:r.reasoning_tokens||0,
@@ -188,7 +175,7 @@ async function runSync(mode="incremental"){
         }));
         try{
           const n=await bulkPutRecords(dbRecs);
-          batchInserted += dbRecs.length; // bulkPut returns count of put attempts; we count as inserted attempts
+          batchInserted += dbRecs.length;
           totalInserted += dbRecs.length;
         }catch(e){
           console.error("bulkPut error",e);
@@ -203,34 +190,27 @@ async function runSync(mode="incremental"){
         break;
       }
       if(batchFailed && mode==="incremental"){
-        // for incremental, fail fast
         setSyncState({phase:"error", running:false, message:`第 ${page-FETCH_BATCH+1} 页拉取失败，请重试`});
         return {ok:false, error:"网络请求失败", partial_inserted:totalInserted};
       }
       if(batchFullPages===0){
         consecutiveEmptyBatches++;
-        if(consecutiveEmptyBatches>=1) break; // bottom reached
+        if(consecutiveEmptyBatches>=1) break;
       }else{
         consecutiveEmptyBatches=0;
       }
       if(mode==="incremental" && batchInserted===0){
-        // no new data in this batch (all existing) -> stop incrementally
-        // need two consecutive batches of zero? simplify single
         break;
       }
-      // small delay to avoid hammering
       await new Promise(r=>setTimeout(r, 120));
     }
 
-    // prune if windowDays set and full mode
     if(windowDays && mode==="full"){
       try{
-        const { pruneOldRecords: prune } = await import("./lib/db.js");
-        const pruned=await prune(windowDays);
+        const pruned=await pruneOldRecords(windowDays);
         if(pruned) console.log(`[GoGauge] pruned ${pruned} old records`);
       }catch{}
     }
-    // fetch exchange rate
     setSyncState({message:"正在获取汇率…", progress:92});
     try{
       const r=await fetch("https://open.er-api.com/v6/latest/USD", {headers:{"Accept":"application/json"}});
@@ -270,13 +250,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
     }
     if(type==="START_SYNC"){
       const mode=payload && payload.mode || "incremental";
-      // must be user-initiated; we log
       console.log("[GoGauge] START_SYNC requested mode",mode,"by",sender.tab?"content":"extension");
       if(syncState.running){
         sendResponse({ok:false, error:"同步进行中"});
         return;
       }
-      // run async, respond immediately with accepted
       sendResponse({ok:true, accepted:true});
       runSync(mode);
       return;
@@ -311,7 +289,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
     }
     if(type==="CLEAR_DATA"){
       try{
-        const { clearAllRecords } = await import("./lib/db.js");
         await clearAllRecords();
         await chrome.storage.local.remove(["lastSyncAt","lastSyncInserted","lastQuota","deepestPageFetched"]);
         quotaCache=null;
@@ -327,25 +304,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse)=>{
     }
     sendResponse({ok:false, error:"unknown type"});
   })();
-  return true; // async
+  return true;
 });
 
 chrome.cookies.onChanged.addListener(async (changeInfo)=>{
   if(!changeInfo.cookie || !changeInfo.cookie.domain.includes("opencode.ai")) return;
-  // notify popups/dashboards
   const a=await checkAuth();
-  chrome.runtime.sendMessage({type:"AUTH_CHANGED", data:a}).catch(()=>{});
+  try{ chrome.runtime.sendMessage({type:"AUTH_CHANGED", data:a}).catch(()=>{}); }catch{}
 });
 
 chrome.runtime.onInstalled.addListener(async()=>{
   await loadQuotaCache();
   const s=await getSettings();
-  // no auto sync — wait for user click per spec
   console.log("[GoGauge] installed, settings",s);
 });
 chrome.runtime.onStartup.addListener(async()=>{
   await loadQuotaCache();
 });
 
-// keep quota fresh when extension wakes but do not auto-sync usage
 (async()=>{ await loadQuotaCache(); })();

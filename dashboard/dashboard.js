@@ -125,9 +125,32 @@ async function renderHome(){
 }
 
 let todayChart=null, dailyChart=null;
+function setChartEmpty(canvasId, empty, msg){
+  const canvas=document.getElementById(canvasId);
+  if(!canvas) return;
+  let ph=document.getElementById(canvasId+"-ph");
+  if(empty){
+    canvas.style.display="none";
+    if(!ph){
+      ph=document.createElement("div");
+      ph.id=canvasId+"-ph";
+      ph.className="chart-empty";
+      canvas.parentElement.appendChild(ph);
+    }
+    ph.textContent=msg||"暂无数据 — 点击右上角『开始统计』后查看";
+    ph.style.display="flex";
+    return true;
+  }else{
+    canvas.style.display="";
+    if(ph) ph.style.display="none";
+    return false;
+  }
+}
 function renderTodayChart(buckets){
   const ctx=document.getElementById("today-chart");
   if(!ctx) return;
+  const isEmpty = !buckets || buckets.every(b=> (b.input||0)===0 && (b.output||0)===0 && (b.count||0)===0);
+  if(setChartEmpty("today-chart", isEmpty)) { if(todayChart){ try{todayChart.destroy();}catch(e){} todayChart=null; } return; }
   if(todayChart) todayChart.destroy();
   todayChart=new Chart(ctx, {
     type:"bar",
@@ -148,6 +171,8 @@ function renderTodayChart(buckets){
 function renderDailyChart(rows){
   const ctx=document.getElementById("daily-chart");
   if(!ctx) return;
+  const isEmpty = !rows || rows.length===0 || rows.every(r=> (r.uncached_input_tokens||0)===0 && (r.total_output_tokens||0)===0);
+  if(setChartEmpty("daily-chart", isEmpty)) { if(dailyChart){ try{dailyChart.destroy();}catch(e){} dailyChart=null; } return; }
   if(dailyChart) dailyChart.destroy();
   dailyChart=new Chart(ctx, {
     type:"line",
@@ -194,6 +219,8 @@ async function renderStats(){
 function renderModelChart(models){
   const ctx=document.getElementById("model-chart");
   if(!ctx) return;
+  const isEmpty = !models || models.length===0;
+  if(setChartEmpty("model-chart", isEmpty, "暂无模型数据")){ if(modelChart){ try{modelChart.destroy();}catch(e){} modelChart=null; } return; }
   if(modelChart) modelChart.destroy();
   const top=models.slice(0,8);
   const sum=top.reduce((a,b)=> a+b.uncached_input_tokens+b.cache_hit_tokens, 0);
@@ -221,6 +248,8 @@ function renderModelRank(models){
   }).join("");
 }
 function renderTrendChart(daily, dim){
+  const isEmpty = !daily || daily.length===0;
+  if(setChartEmpty("trend-chart", isEmpty)){ if(trendChart){ try{trendChart.destroy();}catch(e){} trendChart=null; } return; }
   const ctx=document.getElementById("trend-chart");
   if(!ctx) return;
   if(trendChart) trendChart.destroy();
