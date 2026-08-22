@@ -99,7 +99,6 @@ async function runSync(mode="incremental"){
   abortFlag=false;
   const settings=await getSettings();
   const windowDays= settings.windowDays ?? 90; // null means all
-  const isTurbo = !!settings.turbo;
   setSyncState({running:true, mode, phase:"quota", message:"正在检查登录状态…", inserted:0, page:0, progress:2});
 
   try{
@@ -123,14 +122,14 @@ async function runSync(mode="incremental"){
       console.warn("[GoGauge] quota fetch failed", e);
     }
     // optional key names
-    setSyncState({phase:"usage", message:`正在拉取用量记录 ${isTurbo?"(极速×10)":""} (工作区 ${workspaceId.slice(0,10)}…)`, progress:14});
+    setSyncState({phase:"usage", message:`正在拉取用量记录 ${settings.turbo?"(极速×10)":""} (工作区 ${workspaceId.slice(0,10)}…)`, progress:14});
     let keyNames={};
     try{ keyNames=await fetchKeyNames(workspaceId); if(Object.keys(keyNames).length) await chrome.storage.local.set({keyNames}); }catch{}
 
     const MAX_FULL_PAGES=2000;
-    const INCREMENTAL_PAGES=isTurbo ? 10 : 5;
-    const FETCH_BATCH=isTurbo ? 10 : 5;
-    const SLEEP_MS=isTurbo ? 0 : 120;
+    const INCREMENTAL_PAGES=settings.turbo ? 10 : 5;
+    const FETCH_BATCH=settings.turbo ? 10 : 5;
+    const SLEEP_MS=settings.turbo ? 0 : 120;
     const maxPages = mode==="full" ? MAX_FULL_PAGES : INCREMENTAL_PAGES;
     let page=0;
     let totalInserted=0;
