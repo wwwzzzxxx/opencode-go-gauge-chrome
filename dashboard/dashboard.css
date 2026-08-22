@@ -138,3 +138,30 @@ input:checked+.slider:before{transform:translateX(20px)}
   :root:not([data-theme="light"]):not([data-theme="dark"]) .hint{color:#94a3b8}
   :root:not([data-theme="light"]):not([data-theme="dark"]) .slider{background:#1e2a44}
 }
+
+/* 同步中 红底黑字修复：暗色下强制白字 */
+[data-theme="dark"] .sync-ind,
+[data-theme="dark"] #sync-indicator,
+[data-theme="dark"] .sync-banner,
+[data-theme="dark"] .sync-banner *,
+[data-theme="dark"] #sync-banner-msg,
+[data-theme="dark"] #sync-banner-pct,
+[data-theme="dark"] #sync-banner-detail,
+[data-theme="dark"] .progress-card,
+[data-theme="dark"] .progress-card *,
+[data-theme="dark"] #progress-msg,
+[data-theme="dark"] #progress-pct,
+[data-theme="dark"] #progress-detail,
+[data-theme="dark"] .sync-ind span{
+  color:#fff !important;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .sync-ind,
+  :root:not([data-theme="light"]):not([data-theme="dark"]) #sync-indicator,
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .sync-banner,
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .sync-banner *,
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .progress-card,
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .progress-card *{
+    color:#fff !important;
+  }
+}

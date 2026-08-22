@@ -67,3 +67,30 @@ body{width:380px;min-height:560px;padding:0 0 12px}
 .btn-ico{font-size:11px}
 .foot{text-align:center;margin:8px 12px 0;font-size:11px}
 .tip{margin:8px 12px 0;background:var(--tip-bg);border:1px solid var(--tip-border);color:var(--tip-text);border-radius:10px;padding:8px 10px;font-size:11px;line-height:1.5}
+
+/* 同步中 红底黑字修复：暗色下强制白字 */
+[data-theme="dark"] .sync-ind,
+[data-theme="dark"] #sync-indicator,
+[data-theme="dark"] .sync-banner,
+[data-theme="dark"] .sync-banner *,
+[data-theme="dark"] #sync-banner-msg,
+[data-theme="dark"] #sync-banner-pct,
+[data-theme="dark"] #sync-banner-detail,
+[data-theme="dark"] .progress-card,
+[data-theme="dark"] .progress-card *,
+[data-theme="dark"] #progress-msg,
+[data-theme="dark"] #progress-pct,
+[data-theme="dark"] #progress-detail,
+[data-theme="dark"] .sync-ind span{
+  color:#fff !important;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .sync-ind,
+  :root:not([data-theme="light"]):not([data-theme="dark"]) #sync-indicator,
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .sync-banner,
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .sync-banner *,
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .progress-card,
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .progress-card *{
+    color:#fff !important;
+  }
+}
