@@ -8,7 +8,7 @@ if (Test-Path $out) { Remove-Item $out -Force }
 $tmp = Join-Path $env:TEMP ("go-usage-build-" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $tmp | Out-Null
 try {
-  $items = @("manifest.json","icons","popup","dashboard","src","README.md")
+  $items = @("manifest.json","icons","popup","dashboard","src","README.md","LICENSE")
   foreach ($it in $items) {
     $src = Join-Path $root $it
     $dst = Join-Path $tmp $it
@@ -28,3 +28,4 @@ try {
 } finally {
   if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
 }
+
