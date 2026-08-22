@@ -94,6 +94,42 @@ async function fetchUsageBatch(workspaceId, pages){
   for(const r of results) map.set(r.page, r);
   return map;
 }
+async function findTotalPages(workspaceId, maxGuess=2000){
+  // 二分探测总页数：先确认 high 为空，若 2000 仍有数据则指数翻倍
+  setSyncState({message:"正在探测总页数…", progress:12});
+  try{
+    const first=await fetchUsagePage(workspaceId, 0);
+    if(!first.length) return 0;
+  }catch{ return 0; }
+  let low=0;
+  let high=maxGuess;
+  let highRecs=[];
+  try{ highRecs=await fetchUsagePage(workspaceId, high); }catch{ highRecs=[]; }
+  let doublings=0;
+  while(highRecs.length>0 && doublings<4 && high<10000){
+    low=high;
+    high*=2;
+    setSyncState({message:`探测上限 ${low}→${high} 页…`, progress:13});
+    try{ highRecs=await fetchUsagePage(workspaceId, high); }catch{ highRecs=[]; }
+    doublings++;
+    await new Promise(r=>setTimeout(r, 200));
+  }
+  // 二分
+  let steps=0;
+  while(high - low > 1 && steps < 20){
+    const mid=Math.floor((low+high)/2);
+    setSyncState({message:`二分探测 ${low+1}–${high} → 试 ${mid}…`, progress:13 + Math.round((steps/12)*2)});
+    let recs=[];
+    try{ recs=await fetchUsagePage(workspaceId, mid); }catch{ recs=[]; }
+    if(recs.length===0) high=mid;
+    else low=mid;
+    steps++;
+    await new Promise(r=>setTimeout(r, 80));
+  }
+  const total=low+1;
+  setSyncState({message:`探测完成：共 ${total} 页`, progress:15, totalPages: total});
+  return total;
+}
 
 // Main sync — only starts on user click (mandatory)
 async function runSync(mode="incremental"){
@@ -128,11 +164,33 @@ async function runSync(mode="incremental"){
     let keyNames={};
     try{ keyNames=await fetchKeyNames(workspaceId); if(Object.keys(keyNames).length) await chrome.storage.local.set({keyNames}); }catch{}
 
-    const MAX_FULL_PAGES=2000;
+    let MAX_FULL_PAGES=2000;
     // 增量改为动态：不再固定 5/10 页，而是拉到与本地重叠为止；上限 2000 防止失控
-    const FETCH_BATCH=settings.turbo ? 10 : 5;
-    const SLEEP_MS=settings.turbo ? 0 : 120;
-    const maxPages = mode==="full" ? MAX_FULL_PAGES : 2000;
+    let FETCH_BATCH=settings.turbo ? 10 : 5;
+    let SLEEP_MS=settings.turbo ? 0 : 120;
+    // 全量：先二分探测总页数，提升进度准确性与拉取效率
+    let maxPages = 2000;
+    let totalPagesProbed = null;
+    if(mode==="full"){
+      try{
+        totalPagesProbed=await findTotalPages(workspaceId, 2000);
+        if(totalPagesProbed>0){
+          MAX_FULL_PAGES=totalPagesProbed;
+          maxPages=totalPagesProbed;
+          // 极速下提升并发
+          FETCH_BATCH = settings.turbo ? 20 : 10;
+        } else {
+          maxPages=0;
+        }
+      }catch(e){
+        console.warn("findTotalPages failed", e);
+        maxPages=MAX_FULL_PAGES;
+      }
+    } else {
+      // 增量：上限 2000，实际会提前在重叠点结束
+      maxPages=2000;
+      FETCH_BATCH=settings.turbo ? 10 : 5;
+    }
     let page=0;
     let totalInserted=0;
     let deepestPageFetched=-1;
@@ -167,7 +225,8 @@ async function runSync(mode="incremental"){
       const batchPages=[...Array(Math.min(FETCH_BATCH, maxPages-page))].map((_,i)=> page+i);
       // 进度：增量时按已拉页数估算，全量时按 maxPages
       let progBase = mode==="full" ? 15 + Math.round((page/maxPages)*70) : 15 + Math.min(70, Math.round((page/200)*70));
-      setSyncState({page, message:`正在拉取第 ${page+1}–${page+batchPages.length} 页…`, progress: progBase });
+      const totalForMsg = (mode==="full" && maxPages) ? ` / 共 ${maxPages} 页` : "";
+      setSyncState({page, totalPages: maxPages, message:`正在拉取第 ${page+1}–${page+batchPages.length}${totalForMsg}…`, progress: progBase });
       const batchMap=await fetchUsageBatch(workspaceId, batchPages);
       let batchInserted=0;
       let batchFullPages=0;
@@ -310,7 +369,7 @@ async function runSync(mode="incremental"){
       }
       page += FETCH_BATCH;
       let progAfter = mode==="full" ? 15 + Math.round((Math.min(page,maxPages)/maxPages)*70) : 15 + Math.min(70, Math.round((page/200)*70));
-      setSyncState({inserted:totalInserted, page, progress: progAfter });
+      setSyncState({inserted:totalInserted, page, totalPages: maxPages, progress: progAfter });
 
       if(windowBoundaryReached){
         setSyncState({message:"已到达所选时间窗口边界，停止拉取"});

@@ -90,7 +90,8 @@ function renderSyncBanner(st){
   const pct=Math.max(0, Math.min(100, st.progress||0));
   $("#sync-banner-pct").textContent=pct+"%";
   $("#sync-banner-fill").style.width=pct+"%";
-  $("#sync-banner-detail").textContent= st.page!=null? `第 ${st.page+1} 页 · 已拉取 ${st.inserted||0} 条` : `已拉取 ${st.inserted||0} 条`;
+  const totalPart = st.totalPages ? ` / 共 ${st.totalPages} 页` : "";
+  $("#sync-banner-detail").textContent= st.page!=null? `第 ${st.page+1}${totalPart} · 已拉取 ${st.inserted||0} 条` : `已拉取 ${st.inserted||0} 条` + totalPart;
 }
 
 async function renderHome(){

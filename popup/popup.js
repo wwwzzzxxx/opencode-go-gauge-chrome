@@ -111,7 +111,8 @@ function renderSyncState(st){
   const pct= Math.max(0, Math.min(100, active.progress||0));
   $("#progress-pct").textContent=pct+"%";
   $("#progress-fill").style.width=pct+"%";
-  $("#progress-detail").textContent= active.page? `第 ${active.page+1} 页 · 已拉取 ${active.inserted||0} 条` : `已拉取 ${active.inserted||0} 条`;
+  const totalPart2 = active.totalPages ? ` / 共 ${active.totalPages} 页` : "";
+  $("#progress-detail").textContent= active.page? `第 ${active.page+1}${totalPart2} · 已拉取 ${active.inserted||0} 条` : `已拉取 ${active.inserted||0} 条` + totalPart2;
 }
 
 async function renderTotals(period){
